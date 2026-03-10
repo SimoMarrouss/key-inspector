@@ -1,0 +1,40 @@
+<!-- Plugin Configuration File: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <!-- Unique identifier of the plugin. It should be FQN, cannot be changed between the plugin versions. -->
+    <id>com.usehashmap.key-inspector</id>
+
+    <!-- Public plugin name should be written in Title Case. -->
+    <name>Key Inspector</name>
+
+    <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
+    <vendor url="https://github.com/usehashmap">usehashmap</vendor>
+
+    <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager. -->
+    <description><![CDATA[
+        <b>Key Inspector</b> — View keystore and certificate details directly inside your IDE.<br><br>
+        Inspired by <em>Keystore Explorer</em>, this plugin lets you open and inspect keystores and
+        certificate files without leaving your development environment.<br><br>
+        <b>Supported keystore formats:</b> JKS, JCEKS, BKS, PKCS#12 (p12/pfx), UBER, BCFKS<br>
+        <b>Supported certificate / key formats:</b>
+        PEM, DER (cer, crt), PKCS#7 (p7/p7b), PKCS#8, PKCS#10 (p10),
+        PVK, PubKey (pub), PrivKey (key), pkipath, SPC, SPKAC, CRL
+    ]]></description>
+
+    <!-- Product and plugin compatibility requirements. -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.compose</depends>
+
+    <resource-bundle>messages.KeyInspectorBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Tool window shown in the side bar -->
+        <toolWindow id="Key Inspector"
+                    factoryClass="com.usehashmap.keyinspector.KeyInspectorToolWindowFactory"
+                    anchor="right"
+                    icon="AllIcons.Toolwindows.ToolWindowPalette"/>
+
+        <!-- Register BouncyCastle security providers at startup -->
+        <postStartupActivity
+                implementation="com.usehashmap.keyinspector.BouncyCastleStartupActivity"/>
+    </extensions>
+</idea-plugin>
