@@ -33,6 +33,14 @@
                     anchor="right"
                     icon="AllIcons.Toolwindows.ToolWindowPalette"/>
 
+        <!--
+            File editor provider: opening a certificate / keystore file from the
+            project tree (or via Navigate > File) shows the Key Inspector UI
+            instead of the raw text/binary editor.
+        -->
+        <fileEditorProvider
+                implementation="com.usehashmap.keyinspector.filetype.KeyInspectorFileEditorProvider"/>
+
         <!-- Register BouncyCastle security providers at startup -->
         <postStartupActivity
                 implementation="com.usehashmap.keyinspector.BouncyCastleStartupActivity"/>
