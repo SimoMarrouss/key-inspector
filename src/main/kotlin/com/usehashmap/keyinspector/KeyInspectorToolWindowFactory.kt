@@ -14,6 +14,9 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.usehashmap.keyinspector.actions.ImportCertAction
+import com.usehashmap.keyinspector.actions.ImportCertActionHelper
+import com.usehashmap.keyinspector.service.ExtensionMapper
 import com.usehashmap.keyinspector.ui.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,9 +51,17 @@ private fun KeyInspectorContent(state: KeyInspectorState, project: Project) {
     Column(modifier = Modifier.fillMaxSize()) {
         // ── Toolbar ──────────────────────────────────────────────────────────
         Toolbar(
-            uiState  = uiState,
+            uiState    = uiState,
             onOpenFile = { file -> state.openFile(File(file.path)) },
             onRefresh  = { state.refresh() },
+            onImport   = {
+                ImportCertActionHelper.performImport(
+                    project          = project,
+                    keystoreFile     = state.currentKeystoreFile,
+                    keystorePassword = state.currentKeystorePassword,
+                    onSuccess        = { state.refresh() }
+                )
+            },
             project    = project
         )
 
@@ -72,7 +83,7 @@ private fun KeyInspectorContent(state: KeyInspectorState, project: Project) {
                 is InspectorUiState.Error -> ErrorState(s.title, s.message)
 
                 is InspectorUiState.Loaded -> LoadedState(
-                    loadedState = s,
+                    loadedState   = s,
                     onSelectEntry = { state.selectEntry(it) }
                 )
             }
@@ -85,6 +96,7 @@ private fun Toolbar(
     uiState: InspectorUiState,
     onOpenFile: (VirtualFile) -> Unit,
     onRefresh: () -> Unit,
+    onImport: () -> Unit,
     project: Project
 ) {
     Row(
@@ -119,6 +131,12 @@ private fun Toolbar(
 
         if (uiState is InspectorUiState.Loaded) {
             OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+
+            // "Import…" button – only makes sense for keystores, not bare cert files
+            val loadedExt = File(uiState.loadedFile.filePath).extension.lowercase()
+            if (ExtensionMapper.isKeystore(loadedExt)) {
+                OutlinedButton(onClick = onImport) { Text("Import…") }
+            }
 
             // Show the filename
             val name = File(uiState.loadedFile.filePath).name

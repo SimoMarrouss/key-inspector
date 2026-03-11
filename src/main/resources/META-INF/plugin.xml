@@ -44,5 +44,32 @@
         <!-- Register BouncyCastle security providers at startup -->
         <postStartupActivity
                 implementation="com.usehashmap.keyinspector.BouncyCastleStartupActivity"/>
+
+        <!-- Notification group for import success balloons -->
+        <notificationGroup id="Key Inspector"
+                           displayType="BALLOON"
+                           isLogByDefault="true"/>
     </extensions>
+
+    <actions>
+        <!-- ── Tools menu entry ──────────────────────────────────────────── -->
+        <group id="KeyInspector.ToolsMenu"
+               text="Key Inspector"
+               description="Key Inspector actions"
+               popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="KeyInspector.ImportCert"
+                    class="com.usehashmap.keyinspector.actions.ImportCertAction"
+                    text="Import Certificate / Key Pair…"
+                    description="Import a certificate or key pair into a keystore"/>
+        </group>
+
+        <!-- ── Project-view context menu (right-click on a keystore file) ── -->
+        <action id="KeyInspector.ImportCert.ProjectView"
+                class="com.usehashmap.keyinspector.actions.ImportCertAction"
+                text="Import Certificate / Key Pair…"
+                description="Import a certificate or key pair into this keystore">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+    </actions>
 </idea-plugin>

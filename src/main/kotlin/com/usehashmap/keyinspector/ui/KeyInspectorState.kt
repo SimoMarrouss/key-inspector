@@ -29,8 +29,17 @@ class KeyInspectorState(private val scope: CoroutineScope) {
     private val _uiState = MutableStateFlow<InspectorUiState>(InspectorUiState.Empty)
     val uiState: StateFlow<InspectorUiState> = _uiState
 
-    /** The file currently being inspected (needed to retry with a password). */
+    /** The file currently being inspected (needed to retry with password and for import). */
     private var currentFile: File? = null
+
+    /** The last password that opened the current keystore successfully (used to pre-fill import). */
+    private var lastPassword: CharArray? = null
+
+    /** Public read-only view of the current keystore file path. */
+    val currentKeystoreFile: File? get() = currentFile
+
+    /** Public read-only view of the last successful keystore password. */
+    val currentKeystorePassword: CharArray? get() = lastPassword
 
     fun openFile(file: File, password: CharArray? = null) {
         currentFile = file
@@ -38,7 +47,10 @@ class KeyInspectorState(private val scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
             val result = KeystoreService.load(file, password)
             _uiState.value = when (result) {
-                is LoadResult.Success -> InspectorUiState.Loaded(result.file)
+                is LoadResult.Success -> {
+                    lastPassword = password
+                    InspectorUiState.Loaded(result.file)
+                }
                 is LoadResult.Failure.PasswordRequired ->
                     InspectorUiState.PasswordRequired
                 is LoadResult.Failure.WrongPassword ->
