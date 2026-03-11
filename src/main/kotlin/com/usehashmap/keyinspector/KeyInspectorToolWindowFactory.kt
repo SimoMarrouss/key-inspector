@@ -1,31 +1,41 @@
 package com.usehashmap.keyinspector
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.fileChooser.FileChooserFactory
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
-import com.usehashmap.keyinspector.actions.ImportCertAction
+import com.usehashmap.keyinspector.actions.ChangeKeystorePasswordDialog
 import com.usehashmap.keyinspector.actions.ImportCertActionHelper
+import com.usehashmap.keyinspector.model.KeyEntry
+import com.usehashmap.keyinspector.service.ChangeKeystorePasswordService
+import com.usehashmap.keyinspector.service.ChangePasswordResult
 import com.usehashmap.keyinspector.service.ExtensionMapper
 import com.usehashmap.keyinspector.ui.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import androidx.compose.runtime.collectAsState
 import org.jetbrains.jewel.bridge.addComposeTab
 import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 import java.io.File
+
+// ─── Factory ──────────────────────────────────────────────────────────────────
 
 class KeyInspectorToolWindowFactory : ToolWindowFactory {
 
@@ -36,23 +46,23 @@ class KeyInspectorToolWindowFactory : ToolWindowFactory {
         val state = KeyInspectorState(scope)
 
         toolWindow.addComposeTab("Key Inspector", focusOnClickInside = true) {
-            KeyInspectorContent(
-                state   = state,
-                project = project
-            )
+            KeyInspectorContent(state = state, project = project)
         }
     }
 }
+
+// ─── Root composable ──────────────────────────────────────────────────────────
 
 @Composable
 private fun KeyInspectorContent(state: KeyInspectorState, project: Project) {
     val uiState by state.uiState.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── Toolbar ──────────────────────────────────────────────────────────
-        Toolbar(
+
+        // ── Top file-picker / navigation toolbar ─────────────────────────
+        FilePickerToolbar(
             uiState    = uiState,
-            onOpenFile = { file -> state.openFile(File(file.path)) },
+            onOpenFile = { vf -> state.openFile(File(vf.path)) },
             onRefresh  = { state.refresh() },
             onImport   = {
                 ImportCertActionHelper.performImport(
@@ -65,89 +75,81 @@ private fun KeyInspectorContent(state: KeyInspectorState, project: Project) {
             project    = project
         )
 
-        // ── Body ──────────────────────────────────────────────────────────────
+        // ── Body ──────────────────────────────────────────────────────────
         Box(modifier = Modifier.fillMaxSize().weight(1f)) {
             when (val s = uiState) {
-                is InspectorUiState.Empty -> EmptyState()
-
+                is InspectorUiState.Empty   -> EmptyState()
                 is InspectorUiState.Loading -> LoadingState()
-
-                is InspectorUiState.PasswordRequired -> {
-                    PasswordPromptPanel(
-                        onSubmit = { pwd -> state.retryWithPassword(pwd) },
-                        onCancel = { state.reset() },
-                        modifier = Modifier.align(Alignment.Center).widthIn(max = 420.dp)
-                    )
-                }
-
-                is InspectorUiState.Error -> ErrorState(s.title, s.message)
-
+                is InspectorUiState.PasswordRequired -> PasswordPromptPanel(
+                    onSubmit = { pwd -> state.retryWithPassword(pwd) },
+                    onCancel = { state.reset() },
+                    modifier = Modifier.align(Alignment.Center).widthIn(max = 420.dp)
+                )
+                is InspectorUiState.Error  -> ErrorState(s.title, s.message)
                 is InspectorUiState.Loaded -> LoadedState(
-                    loadedState   = s,
-                    onSelectEntry = { state.selectEntry(it) }
+                    loadedState      = s,
+                    onSelectEntry    = { state.selectEntry(it) },
+                    onChangePassword = {
+                        // Must dispatch to EDT – Compose callbacks run on the UI coroutine,
+                        // but DialogWrapper.showAndGet() requires the event-dispatch thread.
+                        ApplicationManager.getApplication().invokeLater {
+                            performChangePassword(project, state)
+                        }
+                    }
                 )
             }
         }
     }
 }
 
+// ─── File-picker toolbar (always visible) ────────────────────────────────────
+
 @Composable
-private fun Toolbar(
-    uiState: InspectorUiState,
+private fun FilePickerToolbar(
+    uiState:    InspectorUiState,
     onOpenFile: (VirtualFile) -> Unit,
-    onRefresh: () -> Unit,
-    onImport: () -> Unit,
-    project: Project
+    onRefresh:  () -> Unit,
+    onImport:   () -> Unit,
+    project:    Project
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment     = Alignment.CenterVertically
     ) {
         OutlinedButton(onClick = {
-            val descriptor = FileChooserDescriptor(
-                /* chooseFiles = */ true,
-                /* chooseFolders = */ false,
-                /* chooseJars = */ false,
-                /* chooseJarsAsFiles = */ false,
-                /* chooseJarContents = */ false,
-                /* chooseMultiple = */ false
-            ).apply {
-                title = "Open Keystore or Certificate File"
+            val descriptor = FileChooserDescriptor(true, false, false, false, false, false).apply {
+                title       = "Open Keystore or Certificate File"
                 description = "JKS, JCEKS, BKS, P12, PFX, UBER, BCFKS, PEM, CER, CRT, P7B, CRL, P10, PUB, KEY, PKCS8…"
                 withFileFilter { vf ->
                     vf.isDirectory || SUPPORTED_EXTENSIONS.contains(vf.extension?.lowercase())
                 }
             }
-            val chooser = FileChooserFactory.getInstance()
+            val files = FileChooserFactory.getInstance()
                 .createFileChooser(descriptor, project, null)
-            val files = chooser.choose(project)
+                .choose(project)
             files.firstOrNull()?.let { onOpenFile(it) }
-        }) {
-            Text("Open File…")
-        }
+        }) { Text("Open File…") }
+
 
         if (uiState is InspectorUiState.Loaded) {
             OutlinedButton(onClick = onRefresh) { Text("Refresh") }
 
-            // "Import…" button – only makes sense for keystores, not bare cert files
             val loadedExt = File(uiState.loadedFile.filePath).extension.lowercase()
             if (ExtensionMapper.isKeystore(loadedExt)) {
                 OutlinedButton(onClick = onImport) { Text("Import…") }
             }
 
-            // Show the filename
-            val name = File(uiState.loadedFile.filePath).name
             Text(
-                text = name,
-                fontSize = 12.sp,
+                text       = File(uiState.loadedFile.filePath).name,
+                fontSize   = 12.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f)
+                modifier   = Modifier.weight(1f)
             )
             Text(
-                text = uiState.loadedFile.keystoreType,
+                text     = uiState.loadedFile.keystoreType,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(end = 4.dp)
             )
@@ -155,61 +157,94 @@ private fun Toolbar(
     }
 }
 
+// ─── Loaded state (master-detail + viewer toolbar) ────────────────────────────
+
 @Composable
 private fun LoadedState(
-    loadedState: InspectorUiState.Loaded,
-    onSelectEntry: (com.usehashmap.keyinspector.model.KeyEntry) -> Unit
+    loadedState:      InspectorUiState.Loaded,
+    onSelectEntry:    (KeyEntry) -> Unit,
+    onChangePassword: () -> Unit
 ) {
     val loadedFile = loadedState.loadedFile
     val selected   = loadedState.selectedEntry
+    val isKeystore = ExtensionMapper.isKeystore(File(loadedFile.filePath).extension.lowercase())
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        // ── Entry list (master) ───────────────────────────────────────────
-        Column(
-            modifier = Modifier
-                .width(260.dp)
-                .fillMaxHeight()
-        ) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Entries", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Text(
-                    "${loadedFile.entries.size}",
-                    fontSize = 11.sp
-                )
-            }
-            EntryListPanel(
-                entries  = loadedFile.entries,
-                selected = selected,
-                onSelect = onSelectEntry,
-                modifier = Modifier.fillMaxSize()
-            )
+    Column(modifier = Modifier.fillMaxSize()) {
+
+        // ── Viewer toolbar – keystore-level actions ───────────────────────
+        if (isKeystore) {
+            ViewerToolbar(onChangePassword = onChangePassword)
         }
 
-        // ── Detail panel ──────────────────────────────────────────────────
-        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            if (selected == null) {
-                Text(
-                    text = "Select an entry from the list to view its details.",
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp)
-                )
-            } else {
-                EntryDetailPanel(
-                    entry    = selected,
+        // ── Master / detail row ───────────────────────────────────────────
+        Row(modifier = Modifier.fillMaxSize().weight(1f)) {
+
+            // Entry list (left panel)
+            Column(modifier = Modifier.width(260.dp).fillMaxHeight()) {
+                Row(
+                    modifier              = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    Text("Entries", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("${loadedFile.entries.size}", fontSize = 11.sp)
+                }
+                EntryListPanel(
+                    entries  = loadedFile.entries,
+                    selected = selected,
+                    onSelect = onSelectEntry,
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+
+            // Detail panel (right)
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                if (selected == null) {
+                    Text(
+                        text      = "Select an entry from the list to view its details.",
+                        fontSize  = 13.sp,
+                        textAlign = TextAlign.Center,
+                        modifier  = Modifier.align(Alignment.Center).padding(24.dp)
+                    )
+                } else {
+                    EntryDetailPanel(entry = selected, modifier = Modifier.fillMaxSize())
+                }
             }
         }
     }
 }
+
+// ─── Viewer toolbar ───────────────────────────────────────────────────────────
+
+/**
+ * Thin action bar shown at the top of the keystore viewer (below the file-picker
+ * toolbar). Only displayed when a keystore container is loaded (not for bare
+ * certificate / key files). Contains operations that act on the keystore as a whole.
+ */
+@Composable
+private fun ViewerToolbar(onChangePassword: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier              = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment     = Alignment.CenterVertically
+        ) {
+            OutlinedButton(onClick = onChangePassword) {
+                Text("Change / Remove Password…")
+            }
+        }
+        // Hairline separator between viewer toolbar and the entry list
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .padding(horizontal = 0.dp)
+                .then(Modifier.background(Color.Gray.copy(alpha = 0.20f)))
+        )
+    }
+}
+
+// ─── Placeholder states ───────────────────────────────────────────────────────
 
 @Composable
 private fun EmptyState() {
@@ -222,7 +257,7 @@ private fun EmptyState() {
             Text("No file loaded", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Text(
                 "Click \"Open File…\" to inspect a keystore or certificate file.",
-                fontSize = 12.sp,
+                fontSize  = 12.sp,
                 textAlign = TextAlign.Center
             )
         }
@@ -250,9 +285,59 @@ private fun ErrorState(title: String, message: String) {
     }
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 private val SUPPORTED_EXTENSIONS = setOf(
     "jks", "jceks", "bks", "p12", "pfx", "uber", "bcfks",
     "pub", "key", "pem", "cer", "crt",
     "p7", "p7b", "pkipath", "spc",
     "p10", "spkac", "pkcs8", "pvk", "crl"
 )
+
+// ─── Change-password helper ───────────────────────────────────────────────────
+
+/**
+ * Shows the [ChangeKeystorePasswordDialog], calls [ChangeKeystorePasswordService],
+ * then either notifies success (and reloads) or shows a specific error dialog.
+ *
+ * Must be called on the EDT (use ApplicationManager.invokeLater from Compose).
+ */
+private fun performChangePassword(project: Project, state: KeyInspectorState) {
+    val ksFile = state.currentKeystoreFile ?: return
+
+    val dialog = ChangeKeystorePasswordDialog(project)
+    if (!dialog.showAndGet()) return
+
+    val result = ChangeKeystorePasswordService.changePassword(
+        keystoreFile    = ksFile,
+        currentPassword = dialog.currentPassword,
+        newPassword     = dialog.newPassword
+    )
+
+    when (result) {
+        is ChangePasswordResult.Success -> {
+            state.updatePassword(dialog.newPassword)
+            val verb = if (dialog.isRemovePassword) "removed" else "changed"
+            NotificationGroupManager.getInstance()
+                .getNotificationGroup("Key Inspector")
+                .createNotification(
+                    "Password $verb",
+                    "The keystore password for <b>${ksFile.name}</b> was $verb successfully.",
+                    NotificationType.INFORMATION
+                )
+                .notify(project)
+        }
+        is ChangePasswordResult.WrongCurrentPassword ->
+            Messages.showErrorDialog(
+                project,
+                "The current password is incorrect.\n\nDetails: ${result.reason}",
+                "Change Password — Wrong Password"
+            )
+        is ChangePasswordResult.WriteError ->
+            Messages.showErrorDialog(
+                project,
+                "Could not save the keystore.\n\nDetails: ${result.reason}",
+                "Change Password — Write Error"
+            )
+    }
+}

@@ -1,38 +1,46 @@
 package com.usehashmap.keyinspector.filetype
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorState
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.UserDataHolderBase
 import com.intellij.openapi.vfs.VirtualFile
-import com.usehashmap.keyinspector.ui.EntryDetailPanel
-import com.usehashmap.keyinspector.ui.EntryListPanel
-import com.usehashmap.keyinspector.ui.InspectorUiState
-import com.usehashmap.keyinspector.ui.KeyInspectorState
-import com.usehashmap.keyinspector.ui.PasswordPromptPanel
+import com.usehashmap.keyinspector.actions.ChangeKeystorePasswordDialog
+import com.usehashmap.keyinspector.actions.ImportCertActionHelper
+import com.usehashmap.keyinspector.service.ChangeKeystorePasswordService
+import com.usehashmap.keyinspector.service.ChangePasswordResult
+import com.usehashmap.keyinspector.service.ExtensionMapper
+import com.usehashmap.keyinspector.ui.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.jetbrains.jewel.bridge.JewelComposePanel
+import org.jetbrains.jewel.ui.component.OutlinedButton
+import org.jetbrains.jewel.ui.component.Text
 import java.beans.PropertyChangeListener
 import java.io.File
 import javax.swing.JComponent
 
 /**
- * A [FileEditor] that renders the Key Inspector Compose UI for keystore /
- * certificate files opened directly from the project tree.
+ * [FileEditor] that renders the Key Inspector UI when a keystore / certificate
+ * file is opened directly from the project tree.
  */
 class KeyInspectorFileEditor(
-    @Suppress("UnusedPrivateProperty")
-    private val project: Project,  // reserved for future project-scoped services
+    private val project:     Project,
     private val virtualFile: VirtualFile
 ) : UserDataHolderBase(), FileEditor {
 
@@ -41,125 +49,230 @@ class KeyInspectorFileEditor(
 
     private val rootComponent: JComponent = JewelComposePanel(focusOnClickInside = true) {
         val uiState by state.uiState.collectAsState()
-        FileInspectorContent(uiState = uiState, state = state)
+        FileInspectorContent(uiState = uiState, state = state, project = project)
     }.also {
-        // Kick off loading immediately when the editor is created
         state.openFile(File(virtualFile.path))
     }
 
-    override fun getComponent(): JComponent = rootComponent
-    override fun getPreferredFocusedComponent(): JComponent = rootComponent
-    override fun getName(): String = "Key Inspector"
-    override fun getFile(): VirtualFile = virtualFile
-
-    override fun setState(state: FileEditorState) { /* no persistent state */ }
-    override fun isModified(): Boolean = false
-    override fun isValid(): Boolean = virtualFile.isValid
-
-    override fun addPropertyChangeListener(listener: PropertyChangeListener) { /* not needed */ }
-    override fun removePropertyChangeListener(listener: PropertyChangeListener) { /* not needed */ }
-
-    override fun dispose() {
-        // CoroutineScope is cancelled when the SupervisorJob is garbage-collected;
-        // nothing else to tear down explicitly.
-    }
+    override fun getComponent(): JComponent                              = rootComponent
+    override fun getPreferredFocusedComponent(): JComponent             = rootComponent
+    override fun getName(): String                                       = "Key Inspector"
+    override fun getFile(): VirtualFile                                  = virtualFile
+    override fun setState(state: FileEditorState)                       { /* no persistent state */ }
+    override fun isModified(): Boolean                                   = false
+    override fun isValid(): Boolean                                      = virtualFile.isValid
+    override fun addPropertyChangeListener(l: PropertyChangeListener)   { }
+    override fun removePropertyChangeListener(l: PropertyChangeListener){ }
+    override fun dispose()                                               { }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Composables (mirror of KeyInspectorToolWindowFactory, but no toolbar needed
-// because the file is already determined by the editor context)
-// ──────────────────────────────────────────────────────────────────────────────
+// ─── Root composable ──────────────────────────────────────────────────────────
 
 @Composable
-private fun FileInspectorContent(uiState: InspectorUiState, state: KeyInspectorState) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val s = uiState) {
-            is InspectorUiState.Empty -> FileEmptyState()
-            is InspectorUiState.Loading -> FileLoadingState()
-            is InspectorUiState.PasswordRequired -> {
-                PasswordPromptPanel(
+private fun FileInspectorContent(
+    uiState: InspectorUiState,
+    state:   KeyInspectorState,
+    project: Project
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+
+        // ── Viewer action bar (always visible at the top of the editor) ───
+        FileEditorActionBar(uiState = uiState, state = state, project = project)
+
+        // ── Body ──────────────────────────────────────────────────────────
+        Box(modifier = Modifier.fillMaxSize().weight(1f)) {
+            when (val s = uiState) {
+                is InspectorUiState.Empty   -> EmptyState()
+                is InspectorUiState.Loading -> LoadingState()
+                is InspectorUiState.PasswordRequired -> PasswordPromptPanel(
                     onSubmit = { pwd -> state.retryWithPassword(pwd) },
                     onCancel = { state.reset() },
                     modifier = Modifier.align(Alignment.Center).widthIn(max = 420.dp)
                 )
-            }
-            is InspectorUiState.Error -> FileErrorState(s.title, s.message, onRetry = { state.refresh() })
-            is InspectorUiState.Loaded -> {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    // ── Entry list ────────────────────────────────────────
-                    Column(modifier = Modifier.width(260.dp).fillMaxHeight()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            org.jetbrains.jewel.ui.component.Text(
-                                "Entries",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                            org.jetbrains.jewel.ui.component.Text(
-                                "${s.loadedFile.entries.size}",
-                                fontSize = 11.sp
-                            )
-                        }
-                        EntryListPanel(
-                            entries = s.loadedFile.entries,
-                            selected = s.selectedEntry,
-                            onSelect = { state.selectEntry(it) },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    // ── Detail panel ──────────────────────────────────────
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        if (s.selectedEntry == null) {
-                            org.jetbrains.jewel.ui.component.Text(
-                                text = "Select an entry from the list to view its details.",
-                                fontSize = 13.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.align(Alignment.Center).padding(24.dp)
-                            )
-                        } else {
-                            EntryDetailPanel(
-                                entry = s.selectedEntry,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-                }
+                is InspectorUiState.Error  -> ErrorState(s.title, s.message, onRetry = { state.refresh() })
+                is InspectorUiState.Loaded -> LoadedContent(s, state, project)
             }
         }
     }
 }
 
+// ─── Action bar ───────────────────────────────────────────────────────────────
+
+/**
+ * Top action bar for the file editor view.
+ * Shows Refresh, Import, Generate and – for keystores – Change / Remove Password.
+ */
 @Composable
-private fun FileEmptyState() {
+private fun FileEditorActionBar(
+    uiState: InspectorUiState,
+    state:   KeyInspectorState,
+    project: Project
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier              = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment     = Alignment.CenterVertically
+        ) {
+            // Generate is always available
+
+            if (uiState is InspectorUiState.Loaded) {
+                OutlinedButton(onClick = { state.refresh() }) { Text("Refresh") }
+
+                val ext = File(uiState.loadedFile.filePath).extension.lowercase()
+                val isKeystore = ExtensionMapper.isKeystore(ext)
+
+                if (isKeystore) {
+                    OutlinedButton(onClick = {
+                        ImportCertActionHelper.performImport(
+                            project          = project,
+                            keystoreFile     = state.currentKeystoreFile,
+                            keystorePassword = state.currentKeystorePassword,
+                            onSuccess        = { state.refresh() }
+                        )
+                    }) { Text("Import…") }
+
+                    OutlinedButton(onClick = {
+                        ApplicationManager.getApplication().invokeLater {
+                            performChangePassword(project, state)
+                        }
+                    }) { Text("Change / Remove Password…") }
+                }
+
+                Text(
+                    text       = File(uiState.loadedFile.filePath).name,
+                    fontSize   = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier   = Modifier.weight(1f).padding(start = 4.dp)
+                )
+                Text(
+                    text     = uiState.loadedFile.keystoreType,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(end = 4.dp)
+                )
+            }
+        }
+        // Hairline divider
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Color.Gray.copy(alpha = 0.20f))
+        )
+    }
+}
+
+// ─── Loaded master/detail ─────────────────────────────────────────────────────
+
+@Composable
+private fun LoadedContent(
+    s:       InspectorUiState.Loaded,
+    state:   KeyInspectorState,
+    @Suppress("UNUSED_PARAMETER") project: Project
+) {
+    Row(modifier = Modifier.fillMaxSize()) {
+        // Entry list
+        Column(modifier = Modifier.width(260.dp).fillMaxHeight()) {
+            Row(
+                modifier              = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                Text("Entries", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("${s.loadedFile.entries.size}", fontSize = 11.sp)
+            }
+            EntryListPanel(
+                entries  = s.loadedFile.entries,
+                selected = s.selectedEntry,
+                onSelect = { state.selectEntry(it) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        // Detail panel
+        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            if (s.selectedEntry == null) {
+                Text(
+                    text      = "Select an entry from the list to view its details.",
+                    fontSize  = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier  = Modifier.align(Alignment.Center).padding(24.dp)
+                )
+            } else {
+                EntryDetailPanel(entry = s.selectedEntry, modifier = Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
+// ─── Placeholder states ───────────────────────────────────────────────────────
+
+@Composable
+private fun EmptyState() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        org.jetbrains.jewel.ui.component.Text("Preparing…", fontSize = 13.sp)
+        Text("Preparing…", fontSize = 13.sp)
     }
 }
 
 @Composable
-private fun FileLoadingState() {
+private fun LoadingState() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        org.jetbrains.jewel.ui.component.Text("Loading…", fontSize = 13.sp)
+        Text("Loading…", fontSize = 13.sp)
     }
 }
 
 @Composable
-private fun FileErrorState(title: String, message: String, onRetry: () -> Unit) {
+private fun ErrorState(title: String, message: String, onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(32.dp)
         ) {
-            org.jetbrains.jewel.ui.component.Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            org.jetbrains.jewel.ui.component.Text(message, fontSize = 12.sp, textAlign = TextAlign.Center)
-            org.jetbrains.jewel.ui.component.OutlinedButton(onClick = onRetry) {
-                org.jetbrains.jewel.ui.component.Text("Retry")
-            }
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(message, fontSize = 12.sp, textAlign = TextAlign.Center)
+            OutlinedButton(onClick = onRetry) { Text("Retry") }
         }
+    }
+}
+
+// ─── Change-password helper (same logic as in tool-window factory) ────────────
+
+private fun performChangePassword(project: Project, state: KeyInspectorState) {
+    val ksFile = state.currentKeystoreFile ?: return
+
+    val dialog = ChangeKeystorePasswordDialog(project)
+    if (!dialog.showAndGet()) return
+
+    val result = ChangeKeystorePasswordService.changePassword(
+        keystoreFile    = ksFile,
+        currentPassword = dialog.currentPassword,
+        newPassword     = dialog.newPassword
+    )
+
+    when (result) {
+        is ChangePasswordResult.Success -> {
+            state.updatePassword(dialog.newPassword)
+            val verb = if (dialog.isRemovePassword) "removed" else "changed"
+            NotificationGroupManager.getInstance()
+                .getNotificationGroup("Key Inspector")
+                .createNotification(
+                    "Password $verb",
+                    "The keystore password for <b>${ksFile.name}</b> was $verb successfully.",
+                    NotificationType.INFORMATION
+                )
+                .notify(project)
+        }
+        is ChangePasswordResult.WrongCurrentPassword ->
+            Messages.showErrorDialog(
+                project,
+                "The current password is incorrect.\n\nDetails: ${result.reason}",
+                "Change Password — Wrong Password"
+            )
+        is ChangePasswordResult.WriteError ->
+            Messages.showErrorDialog(
+                project,
+                "Could not save the keystore.\n\nDetails: ${result.reason}",
+                "Change Password — Write Error"
+            )
     }
 }

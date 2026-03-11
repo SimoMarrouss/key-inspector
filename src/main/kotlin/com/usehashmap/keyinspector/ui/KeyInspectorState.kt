@@ -82,4 +82,13 @@ class KeyInspectorState(private val scope: CoroutineScope) {
         currentFile = null
         _uiState.value = InspectorUiState.Empty
     }
+
+    /**
+     * Called after a successful password change so the state tracks the new credential
+     * and the viewer reloads cleanly with the updated password.
+     */
+    fun updatePassword(newPassword: CharArray) {
+        lastPassword = newPassword
+        currentFile?.let { openFile(it, newPassword) }
+    }
 }

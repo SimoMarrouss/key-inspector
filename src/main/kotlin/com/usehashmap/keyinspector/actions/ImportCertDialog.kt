@@ -126,8 +126,6 @@ class ImportCertDialog(
         val ksFile = File(keystorePathField.text)
         if (!ksFile.isFile)
             return ValidationInfo("Keystore file does not exist.", keystorePathField)
-        if (keystorePwdField.password.isEmpty())
-            return ValidationInfo("Keystore password must not be empty.", keystorePwdField)
 
         // Source file
         if (sourcePathField.text.isBlank())
