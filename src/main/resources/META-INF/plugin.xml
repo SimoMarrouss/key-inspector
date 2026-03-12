@@ -62,6 +62,10 @@
                     class="com.usehashmap.keyinspector.actions.ImportCertAction"
                     text="Import Certificate / Key Pair…"
                     description="Import a certificate or key pair into a keystore"/>
+            <action id="KeyInspector.GenerateSelfSigned"
+                    class="com.usehashmap.keyinspector.actions.GenerateSelfSignedCertAction"
+                    text="Generate Self-Signed Certificate…"
+                    description="Wizard to generate a self-signed X.509 certificate"/>
         </group>
 
         <!-- ── Project-view context menu (right-click on a keystore file) ── -->
@@ -69,6 +73,12 @@
                 class="com.usehashmap.keyinspector.actions.ImportCertAction"
                 text="Import Certificate / Key Pair…"
                 description="Import a certificate or key pair into this keystore">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+        <action id="KeyInspector.GenerateSelfSigned.ProjectView"
+                class="com.usehashmap.keyinspector.actions.GenerateSelfSignedCertAction"
+                text="Generate Self-Signed Certificate…"
+                description="Wizard to generate a self-signed X.509 certificate">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
     </actions>

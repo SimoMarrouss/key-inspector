@@ -21,6 +21,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.usehashmap.keyinspector.actions.ChangeKeystorePasswordDialog
+import com.usehashmap.keyinspector.actions.GenerateSelfSignedCertHelper
 import com.usehashmap.keyinspector.actions.ImportCertActionHelper
 import com.usehashmap.keyinspector.model.KeyEntry
 import com.usehashmap.keyinspector.service.ChangeKeystorePasswordService
@@ -90,10 +91,17 @@ private fun KeyInspectorContent(state: KeyInspectorState, project: Project) {
                     loadedState      = s,
                     onSelectEntry    = { state.selectEntry(it) },
                     onChangePassword = {
-                        // Must dispatch to EDT – Compose callbacks run on the UI coroutine,
-                        // but DialogWrapper.showAndGet() requires the event-dispatch thread.
                         ApplicationManager.getApplication().invokeLater {
                             performChangePassword(project, state)
+                        }
+                    },
+                    onGenerate = {
+                        ApplicationManager.getApplication().invokeLater {
+                            GenerateSelfSignedCertHelper.performGenerate(
+                                project       = project,
+                                preselectedKs = state.currentKeystoreFile,
+                                onSuccess     = { state.refresh() }
+                            )
                         }
                     }
                 )
@@ -163,7 +171,8 @@ private fun FilePickerToolbar(
 private fun LoadedState(
     loadedState:      InspectorUiState.Loaded,
     onSelectEntry:    (KeyEntry) -> Unit,
-    onChangePassword: () -> Unit
+    onChangePassword: () -> Unit,
+    onGenerate:       () -> Unit
 ) {
     val loadedFile = loadedState.loadedFile
     val selected   = loadedState.selectedEntry
@@ -173,7 +182,10 @@ private fun LoadedState(
 
         // ── Viewer toolbar – keystore-level actions ───────────────────────
         if (isKeystore) {
-            ViewerToolbar(onChangePassword = onChangePassword)
+            ViewerToolbar(
+                onChangePassword = onChangePassword,
+                onGenerate       = onGenerate
+            )
         }
 
         // ── Master / detail row ───────────────────────────────────────────
@@ -222,7 +234,10 @@ private fun LoadedState(
  * certificate / key files). Contains operations that act on the keystore as a whole.
  */
 @Composable
-private fun ViewerToolbar(onChangePassword: () -> Unit) {
+private fun ViewerToolbar(
+    onChangePassword: () -> Unit,
+    onGenerate:       () -> Unit
+) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier              = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -231,6 +246,9 @@ private fun ViewerToolbar(onChangePassword: () -> Unit) {
         ) {
             OutlinedButton(onClick = onChangePassword) {
                 Text("Change / Remove Password…")
+            }
+            OutlinedButton(onClick = onGenerate) {
+                Text("Generate Self-Signed Cert…")
             }
         }
         // Hairline separator between viewer toolbar and the entry list
