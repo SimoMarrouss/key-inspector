@@ -20,14 +20,17 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.UserDataHolderBase
 import com.intellij.openapi.vfs.VirtualFile
 import com.usehashmap.keyinspector.actions.ChangeKeystorePasswordDialog
+import com.usehashmap.keyinspector.actions.GenerateSelfSignedCertHelper
 import com.usehashmap.keyinspector.actions.ImportCertActionHelper
 import com.usehashmap.keyinspector.service.ChangeKeystorePasswordService
 import com.usehashmap.keyinspector.service.ChangePasswordResult
+import com.usehashmap.keyinspector.service.EntryOperationResult
 import com.usehashmap.keyinspector.service.ExtensionMapper
 import com.usehashmap.keyinspector.ui.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.jetbrains.jewel.bridge.JewelComposePanel
 import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
@@ -134,6 +137,16 @@ private fun FileEditorActionBar(
 
                     OutlinedButton(onClick = {
                         ApplicationManager.getApplication().invokeLater {
+                            GenerateSelfSignedCertHelper.performGenerate(
+                                project       = project,
+                                preselectedKs = state.currentKeystoreFile,
+                                onSuccess     = { state.refresh() }
+                            )
+                        }
+                    }) { Text("Generate Self-Signed Cert…") }
+
+                    OutlinedButton(onClick = {
+                        ApplicationManager.getApplication().invokeLater {
                             performChangePassword(project, state)
                         }
                     }) { Text("Change / Remove Password…") }
@@ -168,7 +181,7 @@ private fun FileEditorActionBar(
 private fun LoadedContent(
     s:       InspectorUiState.Loaded,
     state:   KeyInspectorState,
-    @Suppress("UNUSED_PARAMETER") project: Project
+    project: Project
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
         // Entry list
@@ -185,6 +198,16 @@ private fun LoadedContent(
                 entries  = s.loadedFile.entries,
                 selected = s.selectedEntry,
                 onSelect = { state.selectEntry(it) },
+                onDelete = { entry ->
+                    ApplicationManager.getApplication().invokeLater {
+                        performDeleteEntry(project, state, entry, state.scope)
+                    }
+                },
+                onRename = { entry ->
+                    ApplicationManager.getApplication().invokeLater {
+                        performRenameEntry(project, state, entry, state.scope)
+                    }
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -276,3 +299,82 @@ private fun performChangePassword(project: Project, state: KeyInspectorState) {
             )
     }
 }
+
+// ─── Delete / Rename helpers ──────────────────────────────────────────────────
+
+private fun performDeleteEntry(
+    project: Project,
+    state: KeyInspectorState,
+    entry: com.usehashmap.keyinspector.model.KeyEntry,
+    scope: CoroutineScope
+) {
+    val confirm = Messages.showYesNoDialog(
+        project,
+        "Are you sure you want to permanently delete the entry '${entry.alias}'?\n\nThis action cannot be undone.",
+        "Delete Entry",
+        "Delete",
+        "Cancel",
+        Messages.getWarningIcon()
+    )
+    if (confirm != Messages.YES) return
+
+    scope.launch {
+        val result = state.deleteEntry(entry.alias)
+        ApplicationManager.getApplication().invokeLater {
+            when (result) {
+                is EntryOperationResult.Success          -> state.refresh()
+                is EntryOperationResult.WrongPassword    ->
+                    Messages.showErrorDialog(project, result.reason, "Delete Entry — Error")
+                is EntryOperationResult.WriteError       ->
+                    Messages.showErrorDialog(project, result.reason, "Delete Entry — Error")
+                is EntryOperationResult.AliasNotFound    ->
+                    Messages.showErrorDialog(project, "Alias '${result.alias}' not found.", "Delete Entry — Error")
+                is EntryOperationResult.AliasAlreadyExists -> { /* can't happen on delete */ }
+            }
+        }
+    }
+}
+
+private fun performRenameEntry(
+    project: Project,
+    state: KeyInspectorState,
+    entry: com.usehashmap.keyinspector.model.KeyEntry,
+    scope: CoroutineScope
+) {
+    val newAlias = Messages.showInputDialog(
+        project,
+        "Enter a new alias for '${entry.alias}':",
+        "Rename Entry",
+        Messages.getQuestionIcon(),
+        entry.alias,
+        null
+    )?.trim() ?: return
+
+    if (newAlias.isBlank()) {
+        Messages.showErrorDialog(project, "Alias must not be empty.", "Rename Entry — Validation")
+        return
+    }
+    if (newAlias == entry.alias) return
+
+    scope.launch {
+        val result = state.renameEntry(entry.alias, newAlias)
+        ApplicationManager.getApplication().invokeLater {
+            when (result) {
+                is EntryOperationResult.Success          -> state.refresh()
+                is EntryOperationResult.AliasAlreadyExists ->
+                    Messages.showErrorDialog(
+                        project,
+                        "An entry with alias '${result.alias}' already exists.",
+                        "Rename Entry — Conflict"
+                    )
+                is EntryOperationResult.WrongPassword    ->
+                    Messages.showErrorDialog(project, result.reason, "Rename Entry — Error")
+                is EntryOperationResult.WriteError       ->
+                    Messages.showErrorDialog(project, result.reason, "Rename Entry — Error")
+                is EntryOperationResult.AliasNotFound    ->
+                    Messages.showErrorDialog(project, "Alias '${result.alias}' not found.", "Rename Entry — Error")
+            }
+        }
+    }
+}
+

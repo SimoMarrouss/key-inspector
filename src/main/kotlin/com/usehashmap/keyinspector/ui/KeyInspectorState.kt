@@ -2,6 +2,8 @@ package com.usehashmap.keyinspector.ui
 
 import com.usehashmap.keyinspector.model.KeyEntry
 import com.usehashmap.keyinspector.model.LoadedFile
+import com.usehashmap.keyinspector.service.KeystoreEntryService
+import com.usehashmap.keyinspector.service.EntryOperationResult
 import com.usehashmap.keyinspector.service.KeystoreService
 import com.usehashmap.keyinspector.service.LoadResult
 import kotlinx.coroutines.CoroutineScope
@@ -24,7 +26,7 @@ sealed class InspectorUiState {
  * Reactive state holder for the Key Inspector tool window.
  * All state mutations happen on a background dispatcher; Compose collects from the main thread.
  */
-class KeyInspectorState(private val scope: CoroutineScope) {
+class KeyInspectorState(val scope: CoroutineScope) {
 
     private val _uiState = MutableStateFlow<InspectorUiState>(InspectorUiState.Empty)
     val uiState: StateFlow<InspectorUiState> = _uiState
@@ -71,6 +73,29 @@ class KeyInspectorState(private val scope: CoroutineScope) {
         val current = _uiState.value
         if (current is InspectorUiState.Loaded) {
             _uiState.value = current.copy(selectedEntry = entry)
+        }
+    }
+
+    /**
+     * Deletes [alias] from the current keystore on a background thread.
+     * Returns the [EntryOperationResult] on the calling coroutine (caller decides how to show errors).
+     */
+    suspend fun deleteEntry(alias: String): EntryOperationResult {
+        val file = currentFile ?: return EntryOperationResult.WriteError("No file loaded.")
+        val pwd  = lastPassword ?: CharArray(0)
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            KeystoreEntryService.deleteEntry(file, pwd, alias)
+        }
+    }
+
+    /**
+     * Renames [oldAlias] to [newAlias] in the current keystore on a background thread.
+     */
+    suspend fun renameEntry(oldAlias: String, newAlias: String): EntryOperationResult {
+        val file = currentFile ?: return EntryOperationResult.WriteError("No file loaded.")
+        val pwd  = lastPassword ?: CharArray(0)
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            KeystoreEntryService.renameEntry(file, pwd, oldAlias, newAlias)
         }
     }
 

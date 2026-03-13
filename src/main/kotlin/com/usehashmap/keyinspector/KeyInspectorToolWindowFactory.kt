@@ -26,11 +26,13 @@ import com.usehashmap.keyinspector.actions.ImportCertActionHelper
 import com.usehashmap.keyinspector.model.KeyEntry
 import com.usehashmap.keyinspector.service.ChangeKeystorePasswordService
 import com.usehashmap.keyinspector.service.ChangePasswordResult
+import com.usehashmap.keyinspector.service.EntryOperationResult
 import com.usehashmap.keyinspector.service.ExtensionMapper
 import com.usehashmap.keyinspector.ui.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.jetbrains.jewel.bridge.addComposeTab
 import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
@@ -47,7 +49,7 @@ class KeyInspectorToolWindowFactory : ToolWindowFactory {
         val state = KeyInspectorState(scope)
 
         toolWindow.addComposeTab("Key Inspector", focusOnClickInside = true) {
-            KeyInspectorContent(state = state, project = project)
+            KeyInspectorContent(state = state, project = project, scope = scope)
         }
     }
 }
@@ -55,7 +57,7 @@ class KeyInspectorToolWindowFactory : ToolWindowFactory {
 // ─── Root composable ──────────────────────────────────────────────────────────
 
 @Composable
-private fun KeyInspectorContent(state: KeyInspectorState, project: Project) {
+private fun KeyInspectorContent(state: KeyInspectorState, project: Project, scope: CoroutineScope) {
     val uiState by state.uiState.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -102,6 +104,16 @@ private fun KeyInspectorContent(state: KeyInspectorState, project: Project) {
                                 preselectedKs = state.currentKeystoreFile,
                                 onSuccess     = { state.refresh() }
                             )
+                        }
+                    },
+                    onDeleteEntry = { entry ->
+                        ApplicationManager.getApplication().invokeLater {
+                            performDeleteEntry(project, state, entry, scope)
+                        }
+                    },
+                    onRenameEntry = { entry ->
+                        ApplicationManager.getApplication().invokeLater {
+                            performRenameEntry(project, state, entry, scope)
                         }
                     }
                 )
@@ -172,7 +184,9 @@ private fun LoadedState(
     loadedState:      InspectorUiState.Loaded,
     onSelectEntry:    (KeyEntry) -> Unit,
     onChangePassword: () -> Unit,
-    onGenerate:       () -> Unit
+    onGenerate:       () -> Unit,
+    onDeleteEntry:    (KeyEntry) -> Unit,
+    onRenameEntry:    (KeyEntry) -> Unit
 ) {
     val loadedFile = loadedState.loadedFile
     val selected   = loadedState.selectedEntry
@@ -202,10 +216,12 @@ private fun LoadedState(
                     Text("${loadedFile.entries.size}", fontSize = 11.sp)
                 }
                 EntryListPanel(
-                    entries  = loadedFile.entries,
-                    selected = selected,
-                    onSelect = onSelectEntry,
-                    modifier = Modifier.fillMaxSize()
+                    entries   = loadedFile.entries,
+                    selected  = selected,
+                    onSelect  = onSelectEntry,
+                    onDelete  = onDeleteEntry,
+                    onRename  = onRenameEntry,
+                    modifier  = Modifier.fillMaxSize()
                 )
             }
 
@@ -311,6 +327,94 @@ private val SUPPORTED_EXTENSIONS = setOf(
     "p7", "p7b", "pkipath", "spc",
     "p10", "spkac", "pkcs8", "pvk", "crl"
 )
+
+// ─── Entry-level helpers (delete / rename) ────────────────────────────────────
+
+/**
+ * Shows a confirmation dialog then deletes the entry on a background thread.
+ * Must be called on the EDT.
+ */
+private fun performDeleteEntry(
+    project: Project,
+    state: KeyInspectorState,
+    entry: KeyEntry,
+    scope: CoroutineScope
+) {
+    val confirm = Messages.showYesNoDialog(
+        project,
+        "Are you sure you want to permanently delete the entry '${entry.alias}'?\n\nThis action cannot be undone.",
+        "Delete Entry",
+        "Delete",
+        "Cancel",
+        Messages.getWarningIcon()
+    )
+    if (confirm != Messages.YES) return
+
+    scope.launch {
+        val result = state.deleteEntry(entry.alias)
+        ApplicationManager.getApplication().invokeLater {
+            when (result) {
+                is EntryOperationResult.Success ->
+                    state.refresh()
+                is EntryOperationResult.WrongPassword ->
+                    Messages.showErrorDialog(project, result.reason, "Delete Entry — Error")
+                is EntryOperationResult.WriteError ->
+                    Messages.showErrorDialog(project, result.reason, "Delete Entry — Error")
+                is EntryOperationResult.AliasNotFound ->
+                    Messages.showErrorDialog(project, "Alias '${result.alias}' not found.", "Delete Entry — Error")
+                is EntryOperationResult.AliasAlreadyExists -> { /* can't happen on delete */ }
+            }
+        }
+    }
+}
+
+/**
+ * Shows an input dialog for the new alias then renames the entry on a background thread.
+ * Must be called on the EDT.
+ */
+private fun performRenameEntry(
+    project: Project,
+    state: KeyInspectorState,
+    entry: KeyEntry,
+    scope: CoroutineScope
+) {
+    val newAlias = Messages.showInputDialog(
+        project,
+        "Enter a new alias for '${entry.alias}':",
+        "Rename Entry",
+        Messages.getQuestionIcon(),
+        entry.alias,
+        null
+    )?.trim() ?: return
+
+    if (newAlias.isBlank()) {
+        Messages.showErrorDialog(project, "Alias must not be empty.", "Rename Entry — Validation")
+        return
+    }
+    if (newAlias == entry.alias) return
+
+    scope.launch {
+        val result = state.renameEntry(entry.alias, newAlias)
+        ApplicationManager.getApplication().invokeLater {
+            when (result) {
+                is EntryOperationResult.Success ->
+                    state.refresh()
+                is EntryOperationResult.AliasAlreadyExists ->
+                    Messages.showErrorDialog(
+                        project,
+                        "An entry with alias '${result.alias}' already exists in this keystore.",
+                        "Rename Entry — Conflict"
+                    )
+                is EntryOperationResult.WrongPassword ->
+                    Messages.showErrorDialog(project, result.reason, "Rename Entry — Error")
+                is EntryOperationResult.WriteError ->
+                    Messages.showErrorDialog(project, result.reason, "Rename Entry — Error")
+                is EntryOperationResult.AliasNotFound ->
+                    Messages.showErrorDialog(project, "Alias '${result.alias}' not found.", "Rename Entry — Error")
+            }
+        }
+    }
+}
 
 // ─── Change-password helper ───────────────────────────────────────────────────
 

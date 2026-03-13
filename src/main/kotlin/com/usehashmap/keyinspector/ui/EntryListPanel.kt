@@ -1,10 +1,12 @@
 package com.usehashmap.keyinspector.ui
 
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -21,6 +23,8 @@ fun EntryListPanel(
     entries: List<KeyEntry>,
     selected: KeyEntry?,
     onSelect: (KeyEntry) -> Unit,
+    onDelete: (KeyEntry) -> Unit,
+    onRename: (KeyEntry) -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(modifier = modifier) {
@@ -28,33 +32,48 @@ fun EntryListPanel(
             EntryRow(
                 entry      = entry,
                 isSelected = entry == selected,
-                onClick    = { onSelect(entry) }
+                onClick    = { onSelect(entry) },
+                onDelete   = { onDelete(entry) },
+                onRename   = { onRename(entry) }
             )
         }
     }
 }
 
 @Composable
-private fun EntryRow(entry: KeyEntry, isSelected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        EntryTypeIcon(entry.entryType)
-        Column {
-            Text(
-                text       = entry.alias,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                fontSize   = 13.sp
-            )
-            Text(
-                text     = entry.entryType.displayName,
-                fontSize = 11.sp
-            )
+private fun EntryRow(
+    entry: KeyEntry,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    onRename: () -> Unit
+) {
+    ContextMenuArea(items = {
+        listOf(
+            ContextMenuItem("Rename '${entry.alias}'…") { onRename() },
+            ContextMenuItem("Delete '${entry.alias}'")  { onDelete() }
+        )
+    }) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            EntryTypeIcon(entry.entryType)
+            Column {
+                Text(
+                    text       = entry.alias,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    fontSize   = 13.sp
+                )
+                Text(
+                    text     = entry.entryType.displayName,
+                    fontSize = 11.sp
+                )
+            }
         }
     }
 }
@@ -78,5 +97,3 @@ private fun EntryTypeIcon(type: EntryType) {
         modifier           = Modifier.size(16.dp)
     )
 }
-
-
