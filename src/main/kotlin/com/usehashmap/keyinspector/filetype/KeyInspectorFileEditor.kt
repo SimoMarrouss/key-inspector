@@ -20,6 +20,7 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.UserDataHolderBase
 import com.intellij.openapi.vfs.VirtualFile
 import com.usehashmap.keyinspector.actions.ChangeKeystorePasswordDialog
+import com.usehashmap.keyinspector.actions.ExportHelper
 import com.usehashmap.keyinspector.actions.GenerateSelfSignedCertHelper
 import com.usehashmap.keyinspector.actions.ImportCertActionHelper
 import com.usehashmap.keyinspector.service.ChangeKeystorePasswordService
@@ -206,6 +207,19 @@ private fun LoadedContent(
                 onRename = { entry ->
                     ApplicationManager.getApplication().invokeLater {
                         performRenameEntry(project, state, entry, state.scope)
+                    }
+                },
+                onExport = { entry, format ->
+                    ApplicationManager.getApplication().invokeLater {
+                        val ksFile = state.currentKeystoreFile ?: return@invokeLater
+                        val ksPwd  = state.currentKeystorePassword ?: CharArray(0)
+                        ExportHelper.performExport(
+                            project          = project,
+                            entry            = entry,
+                            format           = format,
+                            keystoreFile     = ksFile,
+                            keystorePassword = ksPwd
+                        )
                     }
                 },
                 modifier = Modifier.fillMaxSize()

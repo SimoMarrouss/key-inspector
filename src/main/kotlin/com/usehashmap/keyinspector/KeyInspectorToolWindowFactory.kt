@@ -21,12 +21,14 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.usehashmap.keyinspector.actions.ChangeKeystorePasswordDialog
+import com.usehashmap.keyinspector.actions.ExportHelper
 import com.usehashmap.keyinspector.actions.GenerateSelfSignedCertHelper
 import com.usehashmap.keyinspector.actions.ImportCertActionHelper
 import com.usehashmap.keyinspector.model.KeyEntry
 import com.usehashmap.keyinspector.service.ChangeKeystorePasswordService
 import com.usehashmap.keyinspector.service.ChangePasswordResult
 import com.usehashmap.keyinspector.service.EntryOperationResult
+import com.usehashmap.keyinspector.service.ExportFormat
 import com.usehashmap.keyinspector.service.ExtensionMapper
 import com.usehashmap.keyinspector.ui.*
 import kotlinx.coroutines.CoroutineScope
@@ -115,6 +117,19 @@ private fun KeyInspectorContent(state: KeyInspectorState, project: Project, scop
                         ApplicationManager.getApplication().invokeLater {
                             performRenameEntry(project, state, entry, scope)
                         }
+                    },
+                    onExportEntry = { entry, format ->
+                        ApplicationManager.getApplication().invokeLater {
+                            val ksFile = state.currentKeystoreFile ?: return@invokeLater
+                            val ksPwd  = state.currentKeystorePassword ?: CharArray(0)
+                            ExportHelper.performExport(
+                                project          = project,
+                                entry            = entry,
+                                format           = format,
+                                keystoreFile     = ksFile,
+                                keystorePassword = ksPwd
+                            )
+                        }
                     }
                 )
             }
@@ -186,7 +201,8 @@ private fun LoadedState(
     onChangePassword: () -> Unit,
     onGenerate:       () -> Unit,
     onDeleteEntry:    (KeyEntry) -> Unit,
-    onRenameEntry:    (KeyEntry) -> Unit
+    onRenameEntry:    (KeyEntry) -> Unit,
+    onExportEntry:    (KeyEntry, ExportFormat) -> Unit
 ) {
     val loadedFile = loadedState.loadedFile
     val selected   = loadedState.selectedEntry
@@ -221,6 +237,7 @@ private fun LoadedState(
                     onSelect  = onSelectEntry,
                     onDelete  = onDeleteEntry,
                     onRename  = onRenameEntry,
+                    onExport  = onExportEntry,
                     modifier  = Modifier.fillMaxSize()
                 )
             }
@@ -325,7 +342,7 @@ private val SUPPORTED_EXTENSIONS = setOf(
     "jks", "jceks", "bks", "p12", "pfx", "uber", "bcfks",
     "pub", "key", "pem", "cer", "crt",
     "p7", "p7b", "pkipath", "spc",
-    "p10", "spkac", "pkcs8", "pvk", "crl"
+    "csr", "p10", "spkac", "pkcs8", "pvk", "crl"
 )
 
 // ─── Entry-level helpers (delete / rename) ────────────────────────────────────

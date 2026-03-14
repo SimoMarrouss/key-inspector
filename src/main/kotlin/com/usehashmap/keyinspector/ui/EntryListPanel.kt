@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.usehashmap.keyinspector.model.*
+import com.usehashmap.keyinspector.service.ExportFormat
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.icon.IntelliJIconKey
@@ -25,6 +26,7 @@ fun EntryListPanel(
     onSelect: (KeyEntry) -> Unit,
     onDelete: (KeyEntry) -> Unit,
     onRename: (KeyEntry) -> Unit,
+    onExport: (KeyEntry, ExportFormat) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     LazyColumn(modifier = modifier) {
@@ -34,7 +36,8 @@ fun EntryListPanel(
                 isSelected = entry == selected,
                 onClick    = { onSelect(entry) },
                 onDelete   = { onDelete(entry) },
-                onRename   = { onRename(entry) }
+                onRename   = { onRename(entry) },
+                onExport   = { fmt -> onExport(entry, fmt) }
             )
         }
     }
@@ -46,13 +49,33 @@ private fun EntryRow(
     isSelected: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
-    onRename: () -> Unit
+    onRename: () -> Unit,
+    onExport: (ExportFormat) -> Unit
 ) {
+    // Determine which export items apply to this entry type
+    val exportItems: List<ContextMenuItem> = buildList {
+        val hasChain = entry.entryType == EntryType.PRIVATE_KEY ||
+                       entry.entryType == EntryType.TRUSTED_CERT ||
+                       entry.entryType == EntryType.CERTIFICATE
+        if (hasChain) {
+            add(ContextMenuItem("Export Certificate as PEM")       { onExport(ExportFormat.CERT_PEM) })
+            add(ContextMenuItem("Export Certificate as DER")       { onExport(ExportFormat.CERT_DER) })
+        }
+        if (entry.entryType == EntryType.PRIVATE_KEY) {
+            add(ContextMenuItem("Export Certificate Chain as PEM") { onExport(ExportFormat.CHAIN_PEM) })
+            add(ContextMenuItem("Export as PKCS#12…")              { onExport(ExportFormat.PKCS12) })
+        }
+    }
+
     ContextMenuArea(items = {
-        listOf(
-            ContextMenuItem("Rename '${entry.alias}'…") { onRename() },
-            ContextMenuItem("Delete '${entry.alias}'")  { onDelete() }
-        )
+        buildList {
+            add(ContextMenuItem("Rename '${entry.alias}'…") { onRename() })
+            add(ContextMenuItem("Delete '${entry.alias}'")  { onDelete() })
+            if (exportItems.isNotEmpty()) {
+                // ContextMenuItem doesn't support separators directly; add a disabled label as a visual cue
+                addAll(exportItems)
+            }
+        }
     }) {
         Row(
             modifier = Modifier

@@ -4,6 +4,9 @@ import com.usehashmap.keyinspector.model.KeyEntry
 import com.usehashmap.keyinspector.model.LoadedFile
 import com.usehashmap.keyinspector.service.KeystoreEntryService
 import com.usehashmap.keyinspector.service.EntryOperationResult
+import com.usehashmap.keyinspector.service.ExportFormat
+import com.usehashmap.keyinspector.service.ExportResult
+import com.usehashmap.keyinspector.service.ExportService
 import com.usehashmap.keyinspector.service.KeystoreService
 import com.usehashmap.keyinspector.service.LoadResult
 import kotlinx.coroutines.CoroutineScope
@@ -97,6 +100,28 @@ class KeyInspectorState(val scope: CoroutineScope) {
         return kotlinx.coroutines.withContext(Dispatchers.IO) {
             KeystoreEntryService.renameEntry(file, pwd, oldAlias, newAlias)
         }
+    }
+
+    /**
+     * Exports the entry with [alias] to [destination] using [format].
+     * Must be called on a background thread (already handled by callers via ProgressManager).
+     */
+    fun exportEntry(
+        alias:          String,
+        format: ExportFormat,
+        destination:    java.io.File,
+        exportPassword: CharArray? = null
+    ): ExportResult {
+        val file = currentFile ?: return ExportResult.Error("No keystore file is currently loaded.")
+        val pwd  = lastPassword ?: CharArray(0)
+        return ExportService.export(
+            keystoreFile     = file,
+            keystorePassword = pwd,
+            alias            = alias,
+            format           = format,
+            destination      = destination,
+            exportPassword   = exportPassword
+        )
     }
 
     fun refresh() {
