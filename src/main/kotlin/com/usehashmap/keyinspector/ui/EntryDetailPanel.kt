@@ -145,6 +145,27 @@ private fun LazyListScope.csrItems(e: StandaloneCSREntry) {
     item { DetailRow("Algorithm",           e.algorithm) }
     item { DetailRow(LABEL_KEY_SIZE,        keySizeStr(e.keySize)) }
     item { DetailRow(LABEL_SIG_ALG,         e.signatureAlgorithm) }
+    if (e.challengePassword != null) {
+        item { DetailRow("Challenge Password", e.challengePassword) }
+    }
+
+    if (e.requestedSANs.isNotEmpty()) {
+        item { Spacer(Modifier.height(8.dp)) }
+        item { GroupHeader("Requested Subject Alternative Names  (${e.requestedSANs.size})") }
+        e.requestedSANs.forEach { san ->
+            item { SanRow(san) }
+        }
+    }
+
+    if (e.requestedKeyUsage.isNotEmpty()) {
+        item { Spacer(Modifier.height(8.dp)) }
+        item { BadgeListRow("Requested Key Usage", e.requestedKeyUsage, badgeColor = Color(0xFF1565C0)) }
+    }
+
+    if (e.requestedExtendedKeyUsage.isNotEmpty()) {
+        item { Spacer(Modifier.height(8.dp)) }
+        item { BadgeListRow("Requested Extended Key Usage", e.requestedExtendedKeyUsage, badgeColor = Color(0xFF6A1B9A)) }
+    }
 }
 
 private fun LazyListScope.pubKeyItems(e: StandalonePublicKeyEntry) {

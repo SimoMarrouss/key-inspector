@@ -18,8 +18,10 @@ object KeyInspectorFileType : FileType {
         "pem", "cer", "crt", "p7", "p7b", "pkipath", "spc",
         // Keys
         "pub", "key", "pkcs8", "pvk",
+        // Certificate Signing Requests
+        "csr", "p10", "spkac",
         // Misc
-        "p10", "spkac", "crl"
+        "crl"
     )
 
     override fun getName(): String = "Keystore / Certificate"

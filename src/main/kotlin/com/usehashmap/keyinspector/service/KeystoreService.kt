@@ -1,6 +1,14 @@
 package com.usehashmap.keyinspector.service
 
 import com.usehashmap.keyinspector.model.*
+import org.bouncycastle.asn1.ASN1ObjectIdentifier
+import org.bouncycastle.asn1.ASN1Sequence
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers
+import org.bouncycastle.asn1.x509.Extension
+import org.bouncycastle.asn1.x509.Extensions
+import org.bouncycastle.asn1.x509.GeneralName
+import org.bouncycastle.asn1.x509.GeneralNames
+import org.bouncycastle.asn1.x509.KeyUsage
 import org.bouncycastle.cert.X509CertificateHolder
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cms.CMSSignedData
@@ -52,7 +60,7 @@ object ExtensionMapper {
     private val CERT_KEY_EXTENSIONS = setOf(
         "pub", "key", "pem", "cer", "crt",
         "p7", "p7b", "pkipath", "spc",
-        "p10", "spkac", "pkcs8", "pvk", "crl"
+        "csr", "p10", "spkac", "pkcs8", "pvk", "crl"
     )
 }
 
@@ -492,14 +500,121 @@ object KeystoreService {
             val converter = JcaPEMKeyConverter().setProvider("BC")
             converter.getPublicKey(subjectPubKeyInfo)
         } catch (_: Exception) { null }
+
+        // ── Extract requested extensions from CSR attributes ────────────────
+        val requestedExtensions = extractRequestedExtensions(csr)
+
+        val requestedSANs         = extractSANs(requestedExtensions)
+        val requestedKeyUsage     = extractKeyUsage(requestedExtensions)
+        val requestedExtKeyUsage  = extractExtendedKeyUsage(requestedExtensions)
+        val challengePassword     = extractChallengePassword(csr)
+
+        // ── Map signature algorithm OID to human-readable name ──────────────
+        val sigAlgName = try {
+            SIG_ALG_MAP[csr.signatureAlgorithm.algorithm.id]
+                ?: csr.signatureAlgorithm.algorithm.id
+        } catch (_: Exception) { csr.signatureAlgorithm.algorithm.id }
+
         return StandaloneCSREntry(
-            alias              = alias,
-            subject            = csr.subject.toString(),
-            algorithm          = pubKey?.algorithm ?: alg,
-            keySize            = if (pubKey != null) keySize(pubKey) else 0,
-            signatureAlgorithm = csr.signatureAlgorithm.algorithm.id
+            alias                      = alias,
+            subject                    = csr.subject.toString(),
+            algorithm                  = pubKey?.algorithm ?: alg,
+            keySize                    = if (pubKey != null) keySize(pubKey) else 0,
+            signatureAlgorithm         = sigAlgName,
+            requestedSANs              = requestedSANs,
+            requestedKeyUsage          = requestedKeyUsage,
+            requestedExtendedKeyUsage  = requestedExtKeyUsage,
+            challengePassword          = challengePassword
         )
     }
+
+    /** Extracts the Extensions object from the extensionRequest CSR attribute, or null. */
+    private fun extractRequestedExtensions(csr: PKCS10CertificationRequest): Extensions? {
+        return try {
+            val attr = csr.getAttributes(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest)
+                ?.firstOrNull() ?: return null
+            val attrValues = attr.attrValues
+            if (attrValues.size() == 0) return null
+            Extensions.getInstance(attrValues.getObjectAt(0))
+        } catch (_: Exception) { null }
+    }
+
+    private fun extractSANs(extensions: Extensions?): List<String> {
+        if (extensions == null) return emptyList()
+        return try {
+            val sanExt = extensions.getExtension(Extension.subjectAlternativeName) ?: return emptyList()
+            val generalNames = GeneralNames.getInstance(sanExt.parsedValue)
+            generalNames.names.map { gn ->
+                when (gn.tagNo) {
+                    GeneralName.rfc822Name       -> "email: ${gn.name}"
+                    GeneralName.dNSName          -> "DNS: ${gn.name}"
+                    GeneralName.uniformResourceIdentifier -> "URI: ${gn.name}"
+                    GeneralName.iPAddress        -> "IP: ${gn.name}"
+                    GeneralName.registeredID     -> "OID: ${gn.name}"
+                    GeneralName.directoryName    -> "dirName: ${gn.name}"
+                    GeneralName.otherName        -> "otherName: ${gn.name}"
+                    else                         -> "[${gn.tagNo}]: ${gn.name}"
+                }
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private fun extractKeyUsage(extensions: Extensions?): List<String> {
+        if (extensions == null) return emptyList()
+        return try {
+            val kuExt = extensions.getExtension(Extension.keyUsage) ?: return emptyList()
+            val ku = KeyUsage.getInstance(kuExt.parsedValue)
+            val names = listOf(
+                KeyUsage.digitalSignature  to "digitalSignature",
+                KeyUsage.nonRepudiation    to "nonRepudiation",
+                KeyUsage.keyEncipherment   to "keyEncipherment",
+                KeyUsage.dataEncipherment  to "dataEncipherment",
+                KeyUsage.keyAgreement      to "keyAgreement",
+                KeyUsage.keyCertSign       to "keyCertSign",
+                KeyUsage.cRLSign           to "cRLSign",
+                KeyUsage.encipherOnly      to "encipherOnly",
+                KeyUsage.decipherOnly      to "decipherOnly"
+            )
+            names.filter { (bit, _) -> ku.hasUsages(bit) }.map { (_, name) -> name }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private fun extractExtendedKeyUsage(extensions: Extensions?): List<String> {
+        if (extensions == null) return emptyList()
+        return try {
+            val ekuExt = extensions.getExtension(Extension.extendedKeyUsage) ?: return emptyList()
+            val ekuSeq = ASN1Sequence.getInstance(ekuExt.parsedValue)
+            (0 until ekuSeq.size()).map { i ->
+                val oid = ASN1ObjectIdentifier.getInstance(ekuSeq.getObjectAt(i)).id
+                EKU_MAP[oid] ?: oid
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private fun extractChallengePassword(csr: PKCS10CertificationRequest): String? {
+        return try {
+            val attr = csr.getAttributes(PKCSObjectIdentifiers.pkcs_9_at_challengePassword)
+                ?.firstOrNull() ?: return null
+            val attrValues = attr.attrValues
+            if (attrValues.size() == 0) return null
+            attrValues.getObjectAt(0).toString().takeIf { it.isNotBlank() }
+        } catch (_: Exception) { null }
+    }
+
+    private val SIG_ALG_MAP = mapOf(
+        "1.2.840.113549.1.1.11" to "SHA256withRSA",
+        "1.2.840.113549.1.1.12" to "SHA384withRSA",
+        "1.2.840.113549.1.1.13" to "SHA512withRSA",
+        "1.2.840.113549.1.1.5"  to "SHA1withRSA",
+        "1.2.840.10045.4.3.2"   to "SHA256withECDSA",
+        "1.2.840.10045.4.3.3"   to "SHA384withECDSA",
+        "1.2.840.10045.4.3.4"   to "SHA512withECDSA",
+        "1.2.840.10040.4.3"     to "SHA1withDSA",
+        "2.16.840.1.101.3.4.3.2" to "SHA256withDSA",
+        "1.2.840.113549.1.1.10" to "RSASSA-PSS",
+        "2.16.840.1.101.3.4.3.3" to "SHA384withDSA",
+        "2.16.840.1.101.3.4.3.4" to "SHA512withDSA"
+    )
 
     private fun fingerprint(bytes: ByteArray, algorithm: String): String {
         val md = MessageDigest.getInstance(algorithm)

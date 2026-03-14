@@ -16,8 +16,10 @@
         certificate files without leaving your development environment.<br><br>
         <b>Supported keystore formats:</b> JKS, JCEKS, BKS, PKCS#12 (p12/pfx), UBER, BCFKS<br>
         <b>Supported certificate / key formats:</b>
-        PEM, DER (cer, crt), PKCS#7 (p7/p7b), PKCS#8, PKCS#10 (p10),
-        PVK, PubKey (pub), PrivKey (key), pkipath, SPC, SPKAC, CRL
+        PEM, DER (cer, crt), PKCS#7 (p7/p7b), PKCS#8, PKCS#10 / CSR (csr, p10),
+        PVK, PubKey (pub), PrivKey (key), pkipath, SPC, SPKAC, CRL<br>
+        <b>CSR inspection:</b> Subject DN, key algorithm &amp; size, signature algorithm,
+        requested SANs, requested key usage, requested extended key usage
     ]]></description>
 
     <!-- Product and plugin compatibility requirements. -->

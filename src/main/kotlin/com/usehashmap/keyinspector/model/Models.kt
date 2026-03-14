@@ -72,7 +72,15 @@ data class StandaloneCSREntry(
     val subject: String,
     val algorithm: String,
     val keySize: Int,
-    val signatureAlgorithm: String
+    val signatureAlgorithm: String,
+    /** SAN values requested in the CSR attributes (may be empty). */
+    val requestedSANs: List<String> = emptyList(),
+    /** Key Usage OIDs/names requested in the CSR attributes (may be empty). */
+    val requestedKeyUsage: List<String> = emptyList(),
+    /** Extended Key Usage OIDs/names requested in the CSR attributes (may be empty). */
+    val requestedExtendedKeyUsage: List<String> = emptyList(),
+    /** Challenge password attribute, if present. */
+    val challengePassword: String? = null
 ) : KeyEntry() {
     override val entryType = EntryType.CSR
 }
