@@ -7,7 +7,7 @@
     <name>Key Inspector</name>
 
     <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
-    <vendor url="https://github.com/usehashmap">usehashmap</vendor>
+    <vendor url="https://github.com/SimoMarrouss/key-inspector">Key Inspector</vendor>
 
     <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager. -->
     <description><![CDATA[

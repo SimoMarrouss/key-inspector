@@ -1,12 +1,23 @@
-<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M32.0845 7.94025V4H24.0203V7.9896H16.029V4H7.91553V7.94025H4V36H16.0044V32.0045C16.0058 30.9457 16.4274 29.9308 17.1766 29.1826C17.9258 28.4345 18.9412 28.0143 20 28.0143C21.0588 28.0143 22.0743 28.4345 22.8234 29.1826C23.5726 29.9308 23.9942 30.9457 23.9956 32.0045V36H36V7.94025H32.0845Z"
-          fill="url(#paint0_linear)"/>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1145.46 1145.47" height="40" width="40">
     <defs>
-        <linearGradient id="paint0_linear" x1="2.94192" y1="4.89955" x2="37.7772" y2="39.7345"
-                        gradientUnits="userSpaceOnUse">
-            <stop offset="0.15937" stop-color="#3BEA62"/>
-            <stop offset="0.5404" stop-color="#3C99CC"/>
-            <stop offset="0.93739" stop-color="#6B57FF"/>
-        </linearGradient>
+        <style>
+            .cls-1,.cls-3,.cls-5{fill:none;}.cls-1,.cls-3{stroke:#e49e00;stroke-linecap:round;stroke-linejoin:round;}.cls-1{stroke-width:120px;}.cls-2{fill:#e49e00;}.cls-3{stroke-width:60px;}.cls-4{fill:#1e7d93;}.cls-5{stroke:#1e7d93;stroke-miterlimit:10;stroke-width:100px;}
+        </style>
     </defs>
+    <g id="Objects">
+        <circle class="cls-1" cx="714.87" cy="426.72" r="218.91"/>
+        <path class="cls-2"
+              d="M1348.41,1396.84h122.31a2.36,2.36,0,0,1,2.36,2.36v101.18a2.36,2.36,0,0,1-2.36,2.36H1348.41a0,0,0,0,1,0,0V1396.84a0,0,0,0,1,0,0Z"
+              transform="translate(-801.08 -197.45) rotate(-12.16)"/>
+        <line class="cls-3" x1="835.76" y1="982.64" x2="803.03" y2="819.68"/>
+        <rect class="cls-2" x="1223.9" y="1145.08" width="171.57" height="238.58" rx="85.79"
+              transform="translate(-764.27 -222.92) rotate(-12.16)"/>
+        <path class="cls-4"
+              d="M1640.85,798.84a435.49,435.49,0,1,0-739.39,440.91l-60.54,60.53,58.8,58.8,60.54-60.54a435.53,435.53,0,0,0,680.59-499.7Zm-77.06,296.39a353.62,353.62,0,1,1,25.79-132.57A350,350,0,0,1,1563.79,1095.23Z"
+              transform="translate(-527.27 -527.26)"/>
+        <path class="cls-4" d="M795.73,1294.87l109.4,109.41-245.8,245.79a77.36,77.36,0,0,1-109.41-109.4Z"
+              transform="translate(-527.27 -527.26)"/>
+        <circle class="cls-5" cx="714.49" cy="431.72" r="367.66"/>
+    </g>
 </svg>
