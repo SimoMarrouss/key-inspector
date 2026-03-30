@@ -5,15 +5,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.intellij.openapi.ui.Messages
+import org.jetbrains.jewel.ui.component.Checkbox
+import org.jetbrains.jewel.ui.component.DefaultButton
 import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.TextField
 
 /**
- * Shows a prompt telling the user the keystore is locked, with an "Unlock" button
- * that triggers IntelliJ's native password dialog (no Compose text input needed).
+ * Shows an inline password input with a "Show password" checkbox.
  */
 @Composable
 fun PasswordPromptPanel(
@@ -21,6 +25,9 @@ fun PasswordPromptPanel(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var password by remember { mutableStateOf(TextFieldValue("")) }
+    var showPassword by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier.padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -36,16 +43,31 @@ fun PasswordPromptPanel(
             fontSize = 13.sp
         )
 
+        TextField(
+            value = password,
+            onValueChange = { password = it },
+            visualTransformation = if (showPassword) VisualTransformation.None
+                                   else PasswordVisualTransformation(),
+            modifier = Modifier.width(280.dp)
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Checkbox(
+                checked = showPassword,
+                onCheckedChange = { showPassword = it }
+            )
+            Text("Show password")
+        }
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onCancel) { Text("Cancel") }
-            OutlinedButton(onClick = {
-                // Use IntelliJ's native password dialog — runs on the EDT
-                val pwd = Messages.showPasswordDialog(
-                    "Enter keystore password:",
-                    "Unlock Keystore"
-                )
-                if (pwd != null) onSubmit(pwd.toCharArray())
-            }) { Text("Enter Password…") }
+            DefaultButton(
+                onClick = { onSubmit(password.text.toCharArray()) },
+                enabled = password.text.isNotEmpty()
+            ) { Text("Unlock") }
         }
     }
 }
