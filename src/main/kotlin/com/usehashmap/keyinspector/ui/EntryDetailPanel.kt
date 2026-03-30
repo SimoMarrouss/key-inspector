@@ -20,6 +20,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
+// ─── Chain status colours (shared with EntryListPanel colour palette) ──────────
+
+private val COLOR_CHAIN_VALID    = Color(0xFF2E7D32)
+private val COLOR_CHAIN_WARN     = Color(0xFFE65100)
+private val COLOR_CHAIN_AMBER    = Color(0xFFFF8F00)
+private val COLOR_CHAIN_BROKEN   = Color(0xFFD32F2F)
+
 // ─── Formatting ────────────────────────────────────────────────────────────────
 
 private val DATE_FMT = SimpleDateFormat("yyyy-MM-dd  HH:mm:ss  z")
@@ -92,14 +99,20 @@ private fun LazyListScope.privateKeyItems(e: PrivateKeyEntry) {
     if (e.certificateChain.isNotEmpty()) {
         item { Spacer(Modifier.height(12.dp)) }
         item { SectionHeader("Certificate Chain  (${e.certificateChain.size})") }
+        item { ChainStatusRow(e.chainValidation) }
         e.certificateChain.forEachIndexed { i, cert ->
             val chainLabel = when (i) {
                 0                         -> "End-Entity Certificate"
                 e.certificateChain.lastIndex -> if (cert.isSelfSigned) "Root CA" else "Intermediate CA"
                 else                      -> "Intermediate CA"
             }
+            val isAffected = e.chainValidation.affectedCertIndex == i
             item { Spacer(Modifier.height(10.dp)) }
-            item { SubSectionHeader("[${ i + 1}]  $chainLabel") }
+            if (isAffected) {
+                item { ChainCertWarningHeader("[${i + 1}]  $chainLabel") }
+            } else {
+                item { SubSectionHeader("[${i + 1}]  $chainLabel") }
+            }
             item { SectionDivider() }
             item { Spacer(Modifier.height(4.dp)) }
             certInfoItems(cert)
@@ -180,6 +193,56 @@ private fun LazyListScope.barePrivKeyItems(e: StandalonePrivateKeyEntry) {
     item { DetailRow("Algorithm",   e.algorithm) }
     item { DetailRow(LABEL_KEY_SIZE, keySizeStr(e.keySize)) }
     item { DetailRow("Format",      e.format) }
+}
+
+// ─── Chain validation composables ─────────────────────────────────────────────
+
+@Composable
+private fun ChainStatusRow(validation: ChainValidationResult) {
+    val (color, label) = when (validation.status) {
+        CertChainStatus.VALID         -> COLOR_CHAIN_VALID  to "VALID"
+        CertChainStatus.EXPIRING_SOON -> COLOR_CHAIN_WARN   to "EXPIRING SOON"
+        CertChainStatus.INCOMPLETE    -> COLOR_CHAIN_AMBER  to "INCOMPLETE"
+        CertChainStatus.EXPIRED       -> COLOR_CHAIN_BROKEN to "EXPIRED"
+        CertChainStatus.BROKEN        -> COLOR_CHAIN_BROKEN to "BROKEN"
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(
+            modifier          = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text       = "Chain Status",
+                fontWeight = FontWeight.Medium,
+                fontSize   = 12.sp,
+                modifier   = Modifier.width(LABEL_W.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(color.copy(alpha = 0.13f))
+                    .padding(horizontal = 7.dp, vertical = 2.dp)
+            ) {
+                Text(text = label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color)
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
+            Spacer(Modifier.width(LABEL_W.dp))
+            Text(text = validation.details, fontSize = 11.sp, color = Color.Gray)
+        }
+    }
+}
+
+@Composable
+private fun ChainCertWarningHeader(text: String) {
+    Row(
+        modifier          = Modifier.padding(bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(text = text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(text = "⚠", fontSize = 12.sp, color = COLOR_CHAIN_BROKEN)
+    }
 }
 
 // ─── Full X.509 certificate detail block ─────────────────────────────────────

@@ -22,6 +22,22 @@ enum class EntryType(val displayName: String) {
     UNKNOWN("Unknown")
 }
 
+// ─── Chain validation ──────────────────────────────────────────────────────────
+
+enum class CertChainStatus {
+    VALID,          // Complete chain, all signatures valid, no expired certs
+    EXPIRING_SOON,  // All valid but ≥1 cert expires within 30 days
+    INCOMPLETE,     // Chain does not terminate in a self-signed root CA
+    EXPIRED,        // ≥1 cert in the chain is past notAfter
+    BROKEN,         // Issuer/subject mismatch or signature verification failure
+}
+
+data class ChainValidationResult(
+    val status: CertChainStatus,
+    val details: String,
+    val affectedCertIndex: Int? = null  // 0-based index of the offending cert, if any
+)
+
 // ─── Keystore entries ─────────────────────────────────────────────────────────
 
 data class PrivateKeyEntry(
@@ -29,7 +45,8 @@ data class PrivateKeyEntry(
     val algorithm: String,
     val keySize: Int,
     val certificateChain: List<CertificateInfo>,
-    val creationDate: Date?
+    val creationDate: Date?,
+    val chainValidation: ChainValidationResult
 ) : KeyEntry() {
     override val entryType = EntryType.PRIVATE_KEY
 }

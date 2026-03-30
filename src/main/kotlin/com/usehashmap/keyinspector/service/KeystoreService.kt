@@ -34,6 +34,7 @@ import java.security.interfaces.ECKey
 import java.security.interfaces.RSAKey
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
+import java.util.concurrent.TimeUnit
 import javax.crypto.SecretKey
 
 /** Maps file extensions to their canonical keystore/file type */
@@ -149,13 +150,15 @@ object KeystoreService {
                 val creationDate = try { ks.getCreationDate(alias) } catch (_: Exception) { null }
 
                 if (cert != null && chain.isNotEmpty()) {
-                    val pubKey = cert.publicKey
+                    val pubKey    = cert.publicKey
+                    val chainInfo = chain.map { toCertificateInfo(it) }
                     PrivateKeyEntry(
                         alias            = alias,
                         algorithm        = pubKey.algorithm,
                         keySize          = keySize(pubKey),
-                        certificateChain = chain.map { toCertificateInfo(it) },
-                        creationDate     = creationDate
+                        certificateChain = chainInfo,
+                        creationDate     = creationDate,
+                        chainValidation  = validateChain(chainInfo)
                     )
                 } else {
                     // Secret key entry
@@ -410,6 +413,62 @@ object KeystoreService {
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun validateChain(chain: List<CertificateInfo>): ChainValidationResult {
+        if (chain.isEmpty()) {
+            return ChainValidationResult(CertChainStatus.BROKEN, "No certificate in chain")
+        }
+
+        val now           = System.currentTimeMillis()
+        val warnThreshold = now + TimeUnit.DAYS.toMillis(30)
+
+        // Priority 1: check for expired certs
+        chain.forEachIndexed { i, cert ->
+            if (cert.validUntil.time < now) {
+                val label = if (i == 0) "end-entity certificate" else "certificate at position ${i + 1}"
+                return ChainValidationResult(CertChainStatus.EXPIRED, "The $label has expired", i)
+            }
+        }
+
+        // Priority 2: issuer/subject linkage and signature verification
+        for (i in 0 until chain.size - 1) {
+            val child  = chain[i]
+            val parent = chain[i + 1]
+
+            if (child.raw.issuerX500Principal != parent.raw.subjectX500Principal) {
+                return ChainValidationResult(
+                    CertChainStatus.BROKEN,
+                    "Issuer of certificate [${i + 1}] does not match subject of [${i + 2}]",
+                    i
+                )
+            }
+            try {
+                child.raw.verify(parent.raw.publicKey)
+            } catch (_: Exception) {
+                return ChainValidationResult(
+                    CertChainStatus.BROKEN,
+                    "Signature of certificate [${i + 1}] cannot be verified by [${i + 2}]",
+                    i
+                )
+            }
+        }
+
+        // Priority 3: chain must end in a self-signed root
+        if (!chain.last().isSelfSigned) {
+            return ChainValidationResult(CertChainStatus.INCOMPLETE, "Chain does not end in a self-signed root CA")
+        }
+
+        // Priority 4: expiry warnings
+        chain.forEachIndexed { i, cert ->
+            if (cert.validUntil.time < warnThreshold) {
+                val daysLeft = TimeUnit.MILLISECONDS.toDays(cert.validUntil.time - now)
+                val label    = if (i == 0) "end-entity certificate" else "certificate at position ${i + 1}"
+                return ChainValidationResult(CertChainStatus.EXPIRING_SOON, "The $label expires in ${daysLeft}d", i)
+            }
+        }
+
+        return ChainValidationResult(CertChainStatus.VALID, "Chain is complete and all signatures are valid")
+    }
 
     fun toCertificateInfo(cert: X509Certificate): CertificateInfo {
         val sha1   = fingerprint(cert.encoded, "SHA-1")
