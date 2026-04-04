@@ -93,6 +93,7 @@ private fun KeyInspectorContent(state: KeyInspectorState, project: Project, scop
                 is InspectorUiState.Error  -> ErrorState(s.title, s.message)
                 is InspectorUiState.Loaded -> LoadedState(
                     loadedState      = s,
+                    onSetViewMode    = { state.setViewMode(it) },
                     onSelectEntry    = { state.selectEntry(it) },
                     onChangePassword = {
                         ApplicationManager.getApplication().invokeLater {
@@ -197,6 +198,7 @@ private fun FilePickerToolbar(
 @Composable
 private fun LoadedState(
     loadedState:      InspectorUiState.Loaded,
+    onSetViewMode:    (ViewMode) -> Unit,
     onSelectEntry:    (KeyEntry) -> Unit,
     onChangePassword: () -> Unit,
     onGenerate:       () -> Unit,
@@ -210,49 +212,56 @@ private fun LoadedState(
 
     Column(modifier = Modifier.fillMaxSize()) {
 
-        // ── Viewer toolbar – keystore-level actions ───────────────────────
-        if (isKeystore) {
-            ViewerToolbar(
-                onChangePassword = onChangePassword,
-                onGenerate       = onGenerate
+        ViewerToolbar(
+            viewMode = loadedState.viewMode,
+            showKeystoreActions = isKeystore,
+            onSetViewMode = onSetViewMode,
+            onChangePassword = onChangePassword,
+            onGenerate = onGenerate
+        )
+
+        if (loadedState.viewMode == ViewMode.RAW) {
+            RawContentPanel(
+                rawView = loadedState.rawView,
+                modifier = Modifier.fillMaxSize().weight(1f)
             )
-        }
+        } else {
+            // ── Master / detail row ───────────────────────────────────────────
+            Row(modifier = Modifier.fillMaxSize().weight(1f)) {
 
-        // ── Master / detail row ───────────────────────────────────────────
-        Row(modifier = Modifier.fillMaxSize().weight(1f)) {
-
-            // Entry list (left panel)
-            Column(modifier = Modifier.width(260.dp).fillMaxHeight()) {
-                Row(
-                    modifier              = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment     = Alignment.CenterVertically
-                ) {
-                    Text("Entries", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text("${loadedFile.entries.size}", fontSize = 11.sp)
-                }
-                EntryListPanel(
-                    entries   = loadedFile.entries,
-                    selected  = selected,
-                    onSelect  = onSelectEntry,
-                    onDelete  = onDeleteEntry,
-                    onRename  = onRenameEntry,
-                    onExport  = onExportEntry,
-                    modifier  = Modifier.fillMaxSize()
-                )
-            }
-
-            // Detail panel (right)
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                if (selected == null) {
-                    Text(
-                        text      = "Select an entry from the list to view its details.",
-                        fontSize  = 13.sp,
-                        textAlign = TextAlign.Center,
-                        modifier  = Modifier.align(Alignment.Center).padding(24.dp)
+                // Entry list (left panel)
+                Column(modifier = Modifier.width(260.dp).fillMaxHeight()) {
+                    Row(
+                        modifier              = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Text("Entries", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("${loadedFile.entries.size}", fontSize = 11.sp)
+                    }
+                    EntryListPanel(
+                        entries   = loadedFile.entries,
+                        selected  = selected,
+                        onSelect  = onSelectEntry,
+                        onDelete  = onDeleteEntry,
+                        onRename  = onRenameEntry,
+                        onExport  = onExportEntry,
+                        modifier  = Modifier.fillMaxSize()
                     )
-                } else {
-                    EntryDetailPanel(entry = selected, modifier = Modifier.fillMaxSize())
+                }
+
+                // Detail panel (right)
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    if (selected == null) {
+                        Text(
+                            text      = "Select an entry from the list to view its details.",
+                            fontSize  = 13.sp,
+                            textAlign = TextAlign.Center,
+                            modifier  = Modifier.align(Alignment.Center).padding(24.dp)
+                        )
+                    } else {
+                        EntryDetailPanel(entry = selected, modifier = Modifier.fillMaxSize())
+                    }
                 }
             }
         }
@@ -268,6 +277,9 @@ private fun LoadedState(
  */
 @Composable
 private fun ViewerToolbar(
+    viewMode:         ViewMode,
+    showKeystoreActions: Boolean,
+    onSetViewMode:    (ViewMode) -> Unit,
     onChangePassword: () -> Unit,
     onGenerate:       () -> Unit
 ) {
@@ -277,11 +289,25 @@ private fun ViewerToolbar(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment     = Alignment.CenterVertically
         ) {
-            OutlinedButton(onClick = onChangePassword) {
-                Text("Change / Remove Password…")
+            OutlinedButton(
+                onClick = { onSetViewMode(ViewMode.INSPECTOR) },
+                enabled = viewMode != ViewMode.INSPECTOR
+            ) {
+                Text("Inspector")
             }
-            OutlinedButton(onClick = onGenerate) {
-                Text("Generate Self-Signed Cert…")
+            OutlinedButton(
+                onClick = { onSetViewMode(ViewMode.RAW) },
+                enabled = viewMode != ViewMode.RAW
+            ) {
+                Text("Raw")
+            }
+            if (showKeystoreActions) {
+                OutlinedButton(onClick = onChangePassword) {
+                    Text("Change / Remove Password…")
+                }
+                OutlinedButton(onClick = onGenerate) {
+                    Text("Generate Self-Signed Cert…")
+                }
             }
         }
         // Hairline separator between viewer toolbar and the entry list

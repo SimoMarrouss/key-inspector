@@ -15,15 +15,34 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 /** Models the current state of the Key Inspector tool window. */
 sealed class InspectorUiState {
     object Empty : InspectorUiState()
     object Loading : InspectorUiState()
-    data class Loaded(val loadedFile: LoadedFile, val selectedEntry: KeyEntry? = null) : InspectorUiState()
+    data class Loaded(
+        val loadedFile: LoadedFile,
+        val rawView: RawViewContent,
+        val viewMode: ViewMode = ViewMode.INSPECTOR,
+        val selectedEntry: KeyEntry? = null
+    ) : InspectorUiState()
     object PasswordRequired : InspectorUiState()
     data class Error(val title: String, val message: String) : InspectorUiState()
 }
+
+enum class ViewMode { INSPECTOR, RAW }
+
+data class RawViewContent(
+    val formatLabel: String,
+    val description: String,
+    val content: String,
+    val truncated: Boolean
+)
 
 /**
  * Reactive state holder for the Key Inspector tool window.
@@ -54,7 +73,12 @@ class KeyInspectorState(val scope: CoroutineScope) {
             _uiState.value = when (result) {
                 is LoadResult.Success -> {
                     lastPassword = password
-                    InspectorUiState.Loaded(result.file)
+                    val previousMode = (_uiState.value as? InspectorUiState.Loaded)?.viewMode ?: ViewMode.INSPECTOR
+                    InspectorUiState.Loaded(
+                        loadedFile = result.file,
+                        rawView = buildRawView(file),
+                        viewMode = previousMode
+                    )
                 }
                 is LoadResult.Failure.PasswordRequired ->
                     InspectorUiState.PasswordRequired
@@ -76,6 +100,13 @@ class KeyInspectorState(val scope: CoroutineScope) {
         val current = _uiState.value
         if (current is InspectorUiState.Loaded) {
             _uiState.value = current.copy(selectedEntry = entry)
+        }
+    }
+
+    fun setViewMode(viewMode: ViewMode) {
+        val current = _uiState.value
+        if (current is InspectorUiState.Loaded) {
+            _uiState.value = current.copy(viewMode = viewMode)
         }
     }
 
@@ -125,7 +156,7 @@ class KeyInspectorState(val scope: CoroutineScope) {
     }
 
     fun refresh() {
-        currentFile?.let { openFile(it) }
+        currentFile?.let { openFile(it, lastPassword) }
     }
 
     fun reset() {
@@ -140,5 +171,68 @@ class KeyInspectorState(val scope: CoroutineScope) {
     fun updatePassword(newPassword: CharArray) {
         lastPassword = newPassword
         currentFile?.let { openFile(it, newPassword) }
+    }
+
+    private fun buildRawView(file: File): RawViewContent {
+        val maxBytes = 64 * 1024
+        val bytes = file.inputStream().use { input ->
+            input.readNBytes(maxBytes + 1)
+        }
+        val truncated = bytes.size > maxBytes
+        val visibleBytes = if (truncated) bytes.copyOf(maxBytes) else bytes
+        val text = decodeUtf8OrNull(visibleBytes)
+
+        return if (text != null && looksTextual(text)) {
+            RawViewContent(
+                formatLabel = "Raw Text",
+                description = "Original file content as stored on disk.",
+                content = text,
+                truncated = truncated
+            )
+        } else {
+            val base64 = Base64.getMimeEncoder(64, "\n".toByteArray())
+                .encodeToString(visibleBytes)
+            val hex = visibleBytes.toHexDump()
+            RawViewContent(
+                formatLabel = "Raw Binary",
+                description = "Binary preview shown as hex dump and Base64.",
+                content = buildString {
+                    appendLine("HEX")
+                    appendLine(hex)
+                    appendLine()
+                    appendLine("BASE64")
+                    append(base64)
+                },
+                truncated = truncated
+            )
+        }
+    }
+
+    private fun decodeUtf8OrNull(bytes: ByteArray): String? {
+        val decoder = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+        return try {
+            decoder.decode(ByteBuffer.wrap(bytes)).toString()
+        } catch (_: CharacterCodingException) {
+            null
+        }
+    }
+
+    private fun looksTextual(text: String): Boolean {
+        if (text.isEmpty()) return true
+        val printable = text.count { it == '\n' || it == '\r' || it == '\t' || !it.isISOControl() }
+        return printable.toDouble() / text.length >= 0.90
+    }
+
+    private fun ByteArray.toHexDump(): String = buildString {
+        for (offset in indices step 16) {
+            append("%08x  ".format(offset))
+            val end = minOf(offset + 16, size)
+            append((offset until end).joinToString(" ") { index ->
+                "%02x".format(this@toHexDump[index].toInt() and 0xff)
+            })
+            appendLine()
+        }
     }
 }

@@ -122,6 +122,14 @@ private fun FileEditorActionBar(
 
             if (uiState is InspectorUiState.Loaded) {
                 OutlinedButton(onClick = { state.refresh() }) { Text("Refresh") }
+                OutlinedButton(
+                    onClick = { state.setViewMode(ViewMode.INSPECTOR) },
+                    enabled = uiState.viewMode != ViewMode.INSPECTOR
+                ) { Text("Inspector") }
+                OutlinedButton(
+                    onClick = { state.setViewMode(ViewMode.RAW) },
+                    enabled = uiState.viewMode != ViewMode.RAW
+                ) { Text("Raw") }
 
                 val ext = File(uiState.loadedFile.filePath).extension.lowercase()
                 val isKeystore = ExtensionMapper.isKeystore(ext)
@@ -184,6 +192,11 @@ private fun LoadedContent(
     state:   KeyInspectorState,
     project: Project
 ) {
+    if (s.viewMode == ViewMode.RAW) {
+        RawContentPanel(rawView = s.rawView, modifier = Modifier.fillMaxSize())
+        return
+    }
+
     Row(modifier = Modifier.fillMaxSize()) {
         // Entry list
         Column(modifier = Modifier.width(260.dp).fillMaxHeight()) {
@@ -391,4 +404,3 @@ private fun performRenameEntry(
         }
     }
 }
-
