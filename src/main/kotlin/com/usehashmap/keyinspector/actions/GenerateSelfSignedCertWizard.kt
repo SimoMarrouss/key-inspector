@@ -27,7 +27,7 @@ import javax.swing.event.DocumentListener
  *  3. Subject Alt Names   (dynamic list of DNS + IP entries)
  *  4. Output              (format choice + destination path + passwords + alias)
  */
-class GenerateSelfSignedCertWizard(private val project: Project, preselectedKeystore: File? = null)
+class GenerateSelfSignedCertWizard(project: Project, preselectedKeystore: File? = null)
     : DialogWrapper(project, true) {
 
     // ─── Step panels ──────────────────────────────────────────────────────────
@@ -215,8 +215,8 @@ private class Step1SubjectPanel : WizardStep {
         toolTipText = "Two-letter ISO country code, e.g. US"
         document.addDocumentListener(object : DocumentListener {
             override fun insertUpdate(e: DocumentEvent?) { enforceMaxLength() }
-            override fun removeUpdate(e: DocumentEvent?) {}
-            override fun changedUpdate(e: DocumentEvent?) {}
+            override fun removeUpdate(e: DocumentEvent?) = Unit
+            override fun changedUpdate(e: DocumentEvent?) = Unit
             private fun enforceMaxLength() {
                 if (text.length > 2) SwingUtilities.invokeLater { text = text.take(2) }
             }
@@ -298,7 +298,7 @@ private class Step2KeyAlgorithmPanel : WizardStep {
     }
 
     override fun validate(): ValidationInfo? = null  // always has a default selection
-    override fun addValidationListener(listener: () -> Unit) {}
+    override fun addValidationListener(listener: () -> Unit) = Unit
 
     fun selectedAlgorithm(): KeyAlgorithmChoice =
         choices[radioButtons.indexOfFirst { it.isSelected }.coerceAtLeast(0)]
@@ -338,7 +338,7 @@ private class Step3SanPanel : WizardStep {
         placeholder: String
     ): JPanel {
         inputField.toolTipText = placeholder
-        val list     = JList(listModel)
+        val list     = com.intellij.ui.components.JBList(listModel)
         val addBtn   = JButton("+").apply { preferredSize = Dimension(28, 28) }
         val removeBtn = JButton("−").apply { preferredSize = Dimension(28, 28); isEnabled = false }
 
@@ -367,7 +367,7 @@ private class Step3SanPanel : WizardStep {
     }
 
     override fun validate(): ValidationInfo? = null   // SANs are optional
-    override fun addValidationListener(listener: () -> Unit) {}
+    override fun addValidationListener(listener: () -> Unit) = Unit
 
     fun dnsNames():    List<String> = (0 until dnsListModel.size()).map { dnsListModel[it] }
     fun ipAddresses(): List<String> = (0 until ipListModel.size()).map { ipListModel[it] }
@@ -395,6 +395,13 @@ private class Step4OutputPanel(private val project: Project, preselectedKeystore
     private val ksPwdConfirm  = JBPasswordField().apply { preferredSize = Dimension(220, preferredSize.height) }
     private val keyPwdField   = JBPasswordField().apply { preferredSize = Dimension(220, preferredSize.height) }
     private val keyPwdConfirm = JBPasswordField().apply { preferredSize = Dimension(220, preferredSize.height) }
+    private val showPasswordsCheckBox = createShowPasswordsCheckBox(
+        "Show passwords",
+        ksPwdField,
+        ksPwdConfirm,
+        keyPwdField,
+        keyPwdConfirm
+    )
 
     private val destLabel  = JBLabel("Destination file:")
     private val aliasLabel = JBLabel("Alias:")
@@ -428,11 +435,15 @@ private class Step4OutputPanel(private val project: Project, preselectedKeystore
 
         val dl = object : DocumentListener {
             override fun insertUpdate(e: DocumentEvent?) = listeners.forEach { it() }
-            override fun removeUpdate(e: DocumentEvent?) { /* no-op */ }
-            override fun changedUpdate(e: DocumentEvent?) { /* no-op */ }
+            override fun removeUpdate(e: DocumentEvent?) = listeners.forEach { it() }
+            override fun changedUpdate(e: DocumentEvent?) = listeners.forEach { it() }
         }
         aliasField.document.addDocumentListener(dl)
         destinationTextField.document.addDocumentListener(dl)
+        ksPwdField.document.addDocumentListener(dl)
+        ksPwdConfirm.document.addDocumentListener(dl)
+        keyPwdField.document.addDocumentListener(dl)
+        keyPwdConfirm.document.addDocumentListener(dl)
     }
 
     private fun updateBrowseButtonAction() { /* descriptor is read dynamically in doBrowse */ }
@@ -492,31 +503,10 @@ private class Step4OutputPanel(private val project: Project, preselectedKeystore
     override fun panel(): JComponent {
         if (_panel != null) return _panel!!
 
-        val formatPanel = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            border = BorderFactory.createTitledBorder("Output Format")
-            radioButtons.forEach { rb ->
-                rb.alignmentX = Component.LEFT_ALIGNMENT
-                add(rb)
-            }
-        }
-
-        val fieldsPanel = FormBuilder.createFormBuilder()
-            .addLabeledComponent(destLabel,        destinationField, true)
-            .addLabeledComponent(aliasLabel,       aliasField,       true)
-            .addSeparator()
-            .addLabeledComponent(ksPwdLabel,       ksPwdField,       true)
-            .addLabeledComponent(ksPwdConfLabel,   ksPwdConfirm,     true)
-            .addSeparator()
-            .addLabeledComponent(keyPwdLabel,      keyPwdField,      true)
-            .addLabeledComponent(keyPwdConfLabel,  keyPwdConfirm,    true)
-            .addComponentFillVertically(JPanel(), 0)
-            .panel
-
         _panel = JPanel(BorderLayout(0, 8)).apply {
             border = JBUI.Borders.empty(8)
-            add(formatPanel, BorderLayout.NORTH)
-            add(JScrollPane(fieldsPanel, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+            add(buildFormatPanel(), BorderLayout.NORTH)
+            add(JScrollPane(buildFieldsPanel(), JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
                 JScrollPane.HORIZONTAL_SCROLLBAR_NEVER), BorderLayout.CENTER)
         }
 
@@ -524,44 +514,84 @@ private class Step4OutputPanel(private val project: Project, preselectedKeystore
         return _panel!!
     }
 
-    override fun validate(): ValidationInfo? {
-        val format = selectedOutputFormat()
-        val dest   = destinationTextField.text.trim()
+    private fun buildFormatPanel(): JPanel = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        border = BorderFactory.createTitledBorder("Output Format")
+        radioButtons.forEach { rb ->
+            rb.alignmentX = Component.LEFT_ALIGNMENT
+            add(rb)
+        }
+    }
 
-        if (dest.isBlank())
+    private fun buildFieldsPanel(): JPanel = FormBuilder.createFormBuilder()
+        .addLabeledComponent(destLabel,        destinationField, true)
+        .addLabeledComponent(aliasLabel,       aliasField,       true)
+        .addSeparator()
+        .addLabeledComponent(ksPwdLabel,       ksPwdField,       true)
+        .addLabeledComponent(ksPwdConfLabel,   ksPwdConfirm,     true)
+        .addSeparator()
+        .addLabeledComponent(keyPwdLabel,      keyPwdField,      true)
+        .addLabeledComponent(keyPwdConfLabel,  keyPwdConfirm,    true)
+        .addComponent(showPasswordsCheckBox)
+        .addComponentFillVertically(JPanel(), 0)
+        .panel
+
+    override fun validate(): ValidationInfo? =
+        validateDestination(selectedOutputFormat())
+            ?: validateNonPemFields(selectedOutputFormat())
+
+    private fun validateDestination(format: OutputFormatChoice): ValidationInfo? {
+        val dest = destinationTextField.text.trim()
+        if (dest.isBlank()) {
             return ValidationInfo("Please select a destination.", destinationTextField)
+        }
 
-        when (format) {
+        return when (format) {
             OutputFormatChoice.ADD_TO_EXISTING -> {
-                val f = File(dest)
-                if (!f.isFile) return ValidationInfo("Keystore file does not exist.", destinationTextField)
+                val file = File(dest)
+                if (!file.isFile) ValidationInfo("Keystore file does not exist.", destinationTextField) else null
             }
-            OutputFormatChoice.NEW_JKS, OutputFormatChoice.NEW_PKCS12,
+
+            OutputFormatChoice.NEW_JKS,
+            OutputFormatChoice.NEW_PKCS12,
             OutputFormatChoice.EXPORT_PEM -> {
-                val d = File(dest)
-                if (!d.exists() && !d.mkdirs())
-                    return ValidationInfo("Cannot create output directory.", destinationTextField)
+                val directory = File(dest)
+                if (!directory.exists() && !directory.mkdirs()) {
+                    ValidationInfo("Cannot create output directory.", destinationTextField)
+                } else {
+                    null
+                }
+            }
+        }
+    }
+
+    private fun validateAliasAndPasswords(format: OutputFormatChoice): ValidationInfo? {
+        if (aliasField.text.isBlank()) {
+            return ValidationInfo("Alias must not be empty.", aliasField)
+        }
+
+        if (format != OutputFormatChoice.ADD_TO_EXISTING) {
+            val p1 = ksPwdField.password
+            val p2 = ksPwdConfirm.password
+            if (!p1.contentEquals(p2)) {
+                return ValidationInfo("Keystore passwords do not match.", ksPwdConfirm)
             }
         }
 
-        if (format != OutputFormatChoice.EXPORT_PEM) {
-            if (aliasField.text.isBlank())
-                return ValidationInfo("Alias must not be empty.", aliasField)
-
-            if (format != OutputFormatChoice.ADD_TO_EXISTING) {
-                val p1 = ksPwdField.password
-                val p2 = ksPwdConfirm.password
-                if (!p1.contentEquals(p2))
-                    return ValidationInfo("Keystore passwords do not match.", ksPwdConfirm)
-            }
-
-            val kp1 = keyPwdField.password
-            val kp2 = keyPwdConfirm.password
-            if (!kp1.contentEquals(kp2))
-                return ValidationInfo("Key passwords do not match.", keyPwdConfirm)
+        val kp1 = keyPwdField.password
+        val kp2 = keyPwdConfirm.password
+        return if (!kp1.contentEquals(kp2)) {
+            ValidationInfo("Key passwords do not match.", keyPwdConfirm)
+        } else {
+            null
         }
+    }
 
-        return null
+    private fun validateNonPemFields(format: OutputFormatChoice): ValidationInfo? {
+        if (format == OutputFormatChoice.EXPORT_PEM) {
+            return null
+        }
+        return validateAliasAndPasswords(format)
     }
 
     override fun addValidationListener(listener: () -> Unit) { listeners += listener }

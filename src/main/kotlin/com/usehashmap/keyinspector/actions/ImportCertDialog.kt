@@ -82,6 +82,14 @@ class ImportCertDialog(
         preferredSize = Dimension(300, preferredSize.height)
     }
 
+    private val showPasswordsCheckBox = createShowPasswordsCheckBox(
+        "Show passwords",
+        keystorePwdField,
+        sourcePwdField,
+        keyPwdField,
+        keyPwdConfirmField
+    )
+
     private val hintLabel = JBLabel(
         "<html><small style='color:gray'>" +
         "For a certificate-only import, leave the key-password fields blank." +
@@ -113,6 +121,7 @@ class ImportCertDialog(
             .addLabeledComponent(JBLabel("Key password:"),         keyPwdField,        true)
             .addLabeledComponent(JBLabel("Confirm key password:"), keyPwdConfirmField, true)
             .addComponent(hintLabel)
+            .addComponent(showPasswordsCheckBox)
             .panel
 
         form.border = JBUI.Borders.empty(8)

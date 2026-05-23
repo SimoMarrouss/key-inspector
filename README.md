@@ -1,117 +1,82 @@
-# IntelliJ Platform Plugin Template
-
-[![Twitter Follow](https://img.shields.io/badge/follow-%40JBPlatform-1DA1F2?logo=twitter)](https://twitter.com/JBPlatform)
-[![Developers Forum](https://img.shields.io/badge/JetBrains%20Platform-Join-blue)][jb:forum]
-
-## Plugin template structure
-
-A generated project contains the following content structure:
-
-```
-.
-├── .run/                   Predefined Run/Debug Configurations
-├── build/                  Output build directory
-├── gradle
-│   ├── wrapper/            Gradle Wrapper
-├── src                     Plugin sources
-│   ├── main
-│   │   ├── kotlin/         Kotlin production sources
-│   │   └── resources/      Resources - plugin.xml, icons, messages
-├── .gitignore              Git ignoring rules
-├── build.gradle.kts        Gradle build configuration
-├── gradle.properties       Gradle configuration properties
-├── gradlew                 *nix Gradle Wrapper script
-├── gradlew.bat             Windows Gradle Wrapper script
-├── README.md               README
-└── settings.gradle.kts     Gradle project settings
-```
-
-In addition to the configuration files, the most crucial part is the `src` directory, which contains our implementation
-and the manifest for our plugin – [plugin.xml][file:plugin.xml].
-
-> [!NOTE]
-> To use Java in your plugin, create the `/src/main/java` directory.
-
-## Plugin configuration file
-
-The plugin configuration file is a [plugin.xml][file:plugin.xml] file located in the `src/main/resources/META-INF`
-directory.
-It provides general information about the plugin, its dependencies, extensions, and listeners.
-
-You can read more about this file in the [Plugin Configuration File][docs:plugin.xml] section of our documentation.
-
-If you're still not quite sure what this is all about, read our
-introduction: [What is the IntelliJ Platform?][docs:intro]
-
-$H$H Predefined Run/Debug configurations
-
-Within the default project structure, there is a `.run` directory provided containing predefined *Run/Debug
-configurations* that expose corresponding Gradle tasks:
-
-| Configuration name | Description                                                                                                                                                                         |
-|--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Run Plugin         | Runs [`:runIde`][gh:intellij-platform-gradle-plugin-runIde] IntelliJ Platform Gradle Plugin task. Use the *Debug* icon for plugin debugging.                                        |
-| Run Tests          | Runs [`:test`][gradle:lifecycle-tasks] Gradle task.                                                                                                                                 |
-| Run Verifications  | Runs [`:verifyPlugin`][gh:intellij-platform-gradle-plugin-verifyPlugin] IntelliJ Platform Gradle Plugin task to check the plugin compatibility against the specified IntelliJ IDEs. |
-
-> [!NOTE]
-> You can find the logs from the running task in the `idea.log` tab.
-
-## Publishing the plugin
-
-> [!TIP]
-> Make sure to follow all guidelines listed in [Publishing a Plugin][docs:publishing] to follow all recommended and
-> required steps.
-
-Releasing a plugin to [JetBrains Marketplace](https://plugins.jetbrains.com) is a straightforward operation that uses
 the `publishPlugin` Gradle task provided by
 the [intellij-platform-gradle-plugin][gh:intellij-platform-gradle-plugin-docs].
+# Key Inspector
 
-You can also upload the plugin to the [JetBrains Plugin Repository](https://plugins.jetbrains.com/plugin/upload)
-manually via UI.
+Key Inspector is an IntelliJ Platform plugin for inspecting keystores, certificates, keys, CSRs, and CRLs directly inside the IDE.
 
-## Useful links
+## Features
 
-- [IntelliJ Platform SDK Plugin SDK][docs]
-- [IntelliJ Platform Gradle Plugin Documentation][gh:intellij-platform-gradle-plugin-docs]
-- [IntelliJ Platform Explorer][jb:ipe]
-- [JetBrains Marketplace Quality Guidelines][jb:quality-guidelines]
-- [IntelliJ Platform UI Guidelines][jb:ui-guidelines]
-- [JetBrains Marketplace Paid Plugins][jb:paid-plugins]
-- [IntelliJ SDK Code Samples][gh:code-samples]
+- Open supported files in the **Key Inspector** tool window or dedicated file editor
+- Inspect keystore entries, certificate chains, CSRs, public/private keys, and CRLs
+- Switch between structured **Inspector** and **Raw** views
+- Import certificates or key pairs into existing keystores
+- Export entries as PEM, DER, certificate chains, or PKCS#12
+- Generate self-signed certificates from a guided wizard
+- Change or remove keystore passwords
+- Reveal entered passwords with **Show passwords** checkboxes in password dialogs
 
-[docs]: https://plugins.jetbrains.com/docs/intellij
+## Supported formats
 
-[docs:intro]: https://plugins.jetbrains.com/docs/intellij/intellij-platform.html?from=IJPluginTemplate
+### Keystores
 
-[docs:plugin.xml]: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html?from=IJPluginTemplate
+- JKS
+- JCEKS
+- BKS
+- PKCS#12 (`.p12`, `.pfx`)
+- UBER
+- BCFKS
 
-[docs:publishing]: https://plugins.jetbrains.com/docs/intellij/publishing-plugin.html?from=IJPluginTemplate
+### Certificates / keys / related files
 
-[file:plugin.xml]: ./src/main/resources/META-INF/plugin.xml
+- PEM
+- DER certificates (`.cer`, `.crt`)
+- PKCS#7 (`.p7`, `.p7b`)
+- PKCS#8
+- PKCS#10 / CSR (`.csr`, `.p10`)
+- Public keys (`.pub`)
+- Private keys (`.key`)
+- PKIPath
+- SPC
+- SPKAC
+- PVK
+- CRL
 
-[gh:code-samples]: https://github.com/JetBrains/intellij-sdk-code-samples
+## Password UX
 
-[gh:intellij-platform-gradle-plugin]: https://github.com/JetBrains/intellij-platform-gradle-plugin
+Password entry surfaces support a **Show passwords** checkbox in:
 
-[gh:intellij-platform-gradle-plugin-docs]: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin.html
+- keystore password change / removal
+- PKCS#12 export
+- certificate / key import
+- self-signed certificate generation output step
 
-[gh:intellij-platform-gradle-plugin-runIde]: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-tasks.html#runIde
+The inline unlock prompt inside the viewer also supports password visibility.
 
-[gh:intellij-platform-gradle-plugin-verifyPlugin]: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-tasks.html#verifyPlugin
+## Development
 
-[gradle:lifecycle-tasks]: https://docs.gradle.org/current/userguide/java_plugin.html#lifecycle_tasks
+This project targets IntelliJ IDEA `2025.2.4` and Java `21` for compilation.
 
-[jb:github]: https://github.com/JetBrains/.github/blob/main/profile/README.md
+### Common tasks
 
-[jb:forum]: https://platform.jetbrains.com/
+```bash
+./gradlew build
+./gradlew runIde
+./gradlew verifyPlugin
+./gradlew buildPlugin
+```
 
-[jb:quality-guidelines]: https://plugins.jetbrains.com/docs/marketplace/quality-guidelines.html
+> Gradle itself must be launched with Java 17+.
 
-[jb:paid-plugins]: https://plugins.jetbrains.com/docs/marketplace/paid-plugins-marketplace.html
+## Release checklist
 
-[jb:quality-guidelines]: https://plugins.jetbrains.com/docs/marketplace/quality-guidelines.html
+- Ensure Gradle is running on Java 17+ and the Java 21 toolchain is available
+- Run `build`, `verifyPlugin`, and `buildPlugin`
+- Smoke-test open/import/export/generate/change-password flows in `runIde`
+- Confirm plugin metadata, description, vendor, and change notes are current
+- Upload the generated ZIP from `build/distributions/`
 
-[jb:ipe]: https://jb.gg/ipe
+## Source layout
 
-[jb:ui-guidelines]: https://jetbrains.github.io/ui
+- `src/main/kotlin` — plugin source code
+- `src/main/resources/META-INF/plugin.xml` — plugin manifest
+- `src/main/resources/messages` — bundled strings

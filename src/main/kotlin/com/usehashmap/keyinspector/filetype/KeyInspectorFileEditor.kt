@@ -31,6 +31,7 @@ import com.usehashmap.keyinspector.ui.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.bridge.JewelComposePanel
 import org.jetbrains.jewel.ui.component.OutlinedButton
@@ -55,6 +56,7 @@ class KeyInspectorFileEditor(
         val uiState by state.uiState.collectAsState()
         FileInspectorContent(uiState = uiState, state = state, project = project)
     }.also {
+        it.addMouseWheelListener { event -> event.consume() }
         state.openFile(File(virtualFile.path))
     }
 
@@ -67,7 +69,7 @@ class KeyInspectorFileEditor(
     override fun isValid(): Boolean                                      = virtualFile.isValid
     override fun addPropertyChangeListener(l: PropertyChangeListener)   { }
     override fun removePropertyChangeListener(l: PropertyChangeListener){ }
-    override fun dispose()                                               { }
+    override fun dispose()                                               { scope.cancel() }
 }
 
 // ─── Root composable ──────────────────────────────────────────────────────────

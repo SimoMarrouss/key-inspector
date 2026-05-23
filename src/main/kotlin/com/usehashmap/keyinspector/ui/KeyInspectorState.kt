@@ -63,21 +63,38 @@ class KeyInspectorState(val scope: CoroutineScope) {
     val currentKeystoreFile: File? get() = currentFile
 
     /** Public read-only view of the last successful keystore password. */
-    val currentKeystorePassword: CharArray? get() = lastPassword
+    val currentKeystorePassword: CharArray? get() = lastPassword?.copyOf()
 
     fun openFile(file: File, password: CharArray? = null) {
+        val previousLoaded = _uiState.value as? InspectorUiState.Loaded
+        val sameFileAsCurrent = currentFile?.absolutePath == file.absolutePath
+        val previousMode = previousLoaded
+            ?.takeIf { it.loadedFile.filePath == file.absolutePath }
+            ?.viewMode
+            ?: ViewMode.INSPECTOR
+        val previousSelectedAlias = previousLoaded
+            ?.takeIf { it.loadedFile.filePath == file.absolutePath }
+            ?.selectedEntry
+            ?.alias
+
+        if (!sameFileAsCurrent) {
+            lastPassword = null
+        }
+
         currentFile = file
         _uiState.value = InspectorUiState.Loading
         scope.launch(Dispatchers.IO) {
             val result = KeystoreService.load(file, password)
             _uiState.value = when (result) {
                 is LoadResult.Success -> {
-                    lastPassword = password
-                    val previousMode = (_uiState.value as? InspectorUiState.Loaded)?.viewMode ?: ViewMode.INSPECTOR
+                    lastPassword = password?.copyOf()
                     InspectorUiState.Loaded(
                         loadedFile = result.file,
                         rawView = buildRawView(file),
-                        viewMode = previousMode
+                        viewMode = previousMode,
+                        selectedEntry = previousSelectedAlias?.let { alias ->
+                            result.file.entries.firstOrNull { it.alias == alias }
+                        }
                     )
                 }
                 is LoadResult.Failure.PasswordRequired ->
@@ -161,6 +178,7 @@ class KeyInspectorState(val scope: CoroutineScope) {
 
     fun reset() {
         currentFile = null
+        lastPassword = null
         _uiState.value = InspectorUiState.Empty
     }
 
@@ -169,7 +187,7 @@ class KeyInspectorState(val scope: CoroutineScope) {
      * and the viewer reloads cleanly with the updated password.
      */
     fun updatePassword(newPassword: CharArray) {
-        lastPassword = newPassword
+        lastPassword = newPassword.copyOf()
         currentFile?.let { openFile(it, newPassword) }
     }
 

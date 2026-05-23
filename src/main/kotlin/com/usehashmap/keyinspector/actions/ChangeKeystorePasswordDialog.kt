@@ -36,6 +36,13 @@ class ChangeKeystorePasswordDialog(project: Project) : DialogWrapper(project, tr
         preferredSize = Dimension(320, preferredSize.height)
     }
 
+    private val showPasswordsCheckBox = createShowPasswordsCheckBox(
+        "Show passwords",
+        currentPwdField,
+        newPwdField,
+        confirmPwdField
+    )
+
     private val removePasswordCheckBox = JCheckBox("Remove password (set empty keystore password)").apply {
         addChangeListener { _: ChangeEvent ->
             val remove = isSelected
@@ -66,6 +73,7 @@ class ChangeKeystorePasswordDialog(project: Project) : DialogWrapper(project, tr
             .addComponent(removePasswordCheckBox)
             .addLabeledComponent(JBLabel("New password:"),         newPwdField,            true)
             .addLabeledComponent(JBLabel("Confirm new password:"), confirmPwdField,        true)
+            .addComponent(showPasswordsCheckBox)
             .addComponentFillVertically(javax.swing.JPanel(), 0)
             .panel
 

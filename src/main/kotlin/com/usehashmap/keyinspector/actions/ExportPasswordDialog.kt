@@ -28,6 +28,12 @@ class ExportPasswordDialog(
         preferredSize = Dimension(320, preferredSize.height)
     }
 
+    private val showPasswordsCheckBox = createShowPasswordsCheckBox(
+        "Show passwords",
+        pwdField,
+        confirmField
+    )
+
     init {
         title = "Set Export Password — $exportFileName"
         setOKButtonText("Export")
@@ -44,6 +50,7 @@ class ExportPasswordDialog(
             .addLabeledComponent(JBLabel("Export password:"), pwdField,      true)
             .addLabeledComponent(JBLabel("Confirm password:"), confirmField, true)
             .addComponent(hint)
+            .addComponent(showPasswordsCheckBox)
             .addComponentFillVertically(javax.swing.JPanel(), 0)
             .panel
         form.border = JBUI.Borders.empty(8)

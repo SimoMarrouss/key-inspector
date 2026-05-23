@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.usehashmap"
-version = "1.1-SNAPSHOT"
+version = "1.1.0"
 
 repositories {
     mavenCentral()
@@ -38,8 +38,25 @@ intellijPlatform {
         }
 
         changeNotes = """
-            Initial version
+            <ul>
+              <li>Added password visibility toggles for password entry dialogs and the certificate generation wizard.</li>
+              <li>Preserved inspector view mode and selection when refreshing the same file.</li>
+              <li>Improved password-state handling to avoid leaking stale credentials across files.</li>
+              <li>Refreshed release metadata and documentation for marketplace readiness.</li>
+            </ul>
         """.trimIndent()
+    }
+
+    pluginVerification {
+        ides {
+            ide("IU", "2025.2.4")
+        }
+    }
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
     }
 }
 
@@ -52,6 +69,8 @@ tasks {
 }
 
 kotlin {
+    jvmToolchain(21)
+
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
